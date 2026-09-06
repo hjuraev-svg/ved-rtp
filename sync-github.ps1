@@ -1,12 +1,12 @@
-<#!
+<#
 .SYNOPSIS
     Commits and pushes non-ignored changes in this repository to GitHub.
 
 .DESCRIPTION
     This script is intended to be run by Windows Task Scheduler after sign-in.
-    It deliberately never performs pull, rebase, reset, or any merge: if the
-    remote branch has changed elsewhere, it leaves the local work untouched and
-    records the failed push in the log for manual resolution.
+    It never performs reset or rebase. A remote-only fast-forward update is
+    applied only when the working tree is clean. If both the remote and local
+    copy changed, it stops safely and records the reason in the log.
 #>
 
 $ErrorActionPreference = 'Stop'
@@ -14,6 +14,8 @@ $ErrorActionPreference = 'Stop'
 $repoPath = $PSScriptRoot
 $logDir = Join-Path $env:LOCALAPPDATA 'VED-RTP'
 $logPath = Join-Path $logDir 'github-sync.log'
+$mutex = New-Object System.Threading.Mutex($false, 'Local\VED-RTP-GitHubAutoSync')
+$hasSyncLock = $false
 
 New-Item -ItemType Directory -Force -Path $logDir | Out-Null
 
@@ -29,12 +31,39 @@ function Invoke-Git([string[]]$arguments) {
 }
 
 try {
+    if (-not $mutex.WaitOne(0)) {
+        Write-SyncLog 'Another sync is already running.'
+        exit 0
+    }
+    $hasSyncLock = $true
+
     Invoke-Git @('rev-parse', '--is-inside-work-tree')
+
+    # Check the remote before committing. This prevents an unattended task
+    # from attempting a merge when the same repository was changed elsewhere.
+    & git -C $repoPath fetch --quiet origin main
+    $remoteAvailable = $LASTEXITCODE -eq 0
+    if ($remoteAvailable) {
+        $remoteAhead = [int](& git -C $repoPath rev-list --count 'HEAD..origin/main')
+        $workTreeDirty = [bool](& git -C $repoPath status --porcelain)
+        if ($remoteAhead -gt 0) {
+            if ($workTreeDirty) {
+                Write-SyncLog 'Sync paused: origin/main changed and local work is present. Resolve it manually before the next sync.'
+                exit 3
+            }
+            Invoke-Git @('merge', '--ff-only', 'origin/main')
+            Write-SyncLog 'Applied a safe fast-forward update from origin/main.'
+        }
+    }
+    else {
+        Write-SyncLog 'GitHub is unavailable; local changes will be committed and pushed on a later run.'
+    }
+
     Invoke-Git @('add', '--all')
 
     & git -C $repoPath diff --cached --quiet
     if ($LASTEXITCODE -eq 0) {
-        Write-SyncLog 'No changes to sync.'
+        Write-SyncLog 'No local changes to sync.'
         exit 0
     }
     if ($LASTEXITCODE -ne 1) {
@@ -55,10 +84,21 @@ try {
 
     $stamp = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
     Invoke-Git @('commit', '-m', "Auto-sync: $stamp")
-    Invoke-Git @('push', 'origin', 'main')
-    Write-SyncLog 'Changes committed and pushed to origin/main.'
+    if ($remoteAvailable) {
+        Invoke-Git @('push', 'origin', 'main')
+        Write-SyncLog 'Changes committed and pushed to origin/main.'
+    }
+    else {
+        Write-SyncLog 'Changes committed locally; push is deferred until GitHub is reachable.'
+    }
 }
 catch {
     Write-SyncLog "Sync failed: $($_.Exception.Message)"
     exit 1
+}
+finally {
+    if ($mutex) {
+        if ($hasSyncLock) { $mutex.ReleaseMutex() }
+        $mutex.Dispose()
+    }
 }

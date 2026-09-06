@@ -1,0 +1,8 @@
+# Keep Unix deployment and container files runnable after Windows commits.
+* text=auto
+*.sh text eol=lf
+*.py text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+Dockerfile text eol=lf
+*.ps1 text eol=crlf
