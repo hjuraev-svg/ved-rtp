@@ -62,7 +62,8 @@ try {
         throw 'Docker Desktop did not become ready within five minutes.'
     }
 
-    Invoke-Docker @('compose', 'up', '-d', '--build', '--wait', '--wait-timeout', '120')
+    $composeFile = Join-Path $repoPath 'docker-compose.yml'
+    Invoke-Docker @('compose', '--project-directory', $repoPath, '-f', $composeFile, 'up', '-d', '--build', '--wait', '--wait-timeout', '120')
     $webPort = ((Get-Content (Join-Path $repoPath '.env') |
         Where-Object { $_ -match '^WEB_PORT=' } |
         Select-Object -First 1) -replace '^WEB_PORT=', '').Trim()
