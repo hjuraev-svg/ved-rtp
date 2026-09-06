@@ -1,0 +1,27 @@
+# Server-only overlay: publish through the shared Caddy instead of a raw port.
+#
+# Enabled on the server via COMPOSE_FILE in .env:
+#   COMPOSE_FILE=docker-compose.yml:docker-compose.caddy.yml
+#
+# Caddy terminates TLS for jnslabsonline.uz, strips the /ved prefix and proxies
+# to this container by name over the erp_aroma_default network. Because the SPA
+# is built with base=/ved/, the browser asks for /ved/assets, /ved/api and
+# /ved/ws — which arrive here as /assets, /api and /ws.
+#
+# Do NOT use this file locally: erp_aroma_default does not exist there.
+
+services:
+  web:
+    build:
+      args:
+        VITE_BASE: /ved/
+    # No host port at all — reachable only through Caddy over HTTPS.
+    ports: !reset []
+    networks:
+      - default
+      - proxy
+
+networks:
+  proxy:
+    external: true
+    name: erp_aroma_default

@@ -1,0 +1,66 @@
+name: ved-rtp
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: ved-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-ved}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ved_local_pass}
+      POSTGRES_DB: ${POSTGRES_DB:-ved}
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-ved} -d ${POSTGRES_DB:-ved}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    # Bound to loopback only — the database must never be reachable from the
+    # network. Local DB tooling still connects via localhost:${POSTGRES_PORT}.
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5433}:5432"
+
+  api:
+    build:
+      context: ./backend
+    container_name: ved-api
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-ved}:${POSTGRES_PASSWORD:-ved_local_pass}@db:5432/${POSTGRES_DB:-ved}
+      JWT_SECRET: ${JWT_SECRET:-change-me-in-env-file}
+      SEED_DEMO: ${SEED_DEMO:-true}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@ved.local}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin123}
+      TZ: ${TZ:-Asia/Tashkent}
+    volumes:
+      - uploads:/data/uploads
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/api/health',timeout=3).status==200 else 1)\""]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    # Loopback only. The web container proxies /api, /ws and /docs, so the API
+    # needs no public port of its own — Swagger stays available at
+    # http://<host>:${WEB_PORT}/docs.
+    ports:
+      - "127.0.0.1:${API_PORT:-8000}:8000"
+
+  web:
+    build:
+      context: ./frontend
+    container_name: ved-web
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "${WEB_PORT:-8080}:80"
+
+volumes:
+  db_data:
+  uploads:
