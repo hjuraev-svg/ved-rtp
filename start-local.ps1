@@ -11,8 +11,14 @@
 $ErrorActionPreference = 'Stop'
 
 $repoPath = $PSScriptRoot
-$logDir = Join-Path $env:LOCALAPPDATA 'VED-RTP'
+$logDir = Join-Path $repoPath '.runtime'
 $logPath = Join-Path $logDir 'local-app.log'
+$dockerPath = @(
+    (Get-Command docker -ErrorAction SilentlyContinue).Source,
+    "$env:LOCALAPPDATA\Programs\DockerDesktop\resources\bin\docker.exe",
+    "$env:ProgramFiles\Docker\Docker\resources\bin\docker.exe",
+    "$env:LOCALAPPDATA\Docker\Docker\resources\bin\docker.exe"
+) | Where-Object { $_ -and (Test-Path -LiteralPath $_ -PathType Leaf) } | Select-Object -First 1
 
 New-Item -ItemType Directory -Force -Path $logDir | Out-Null
 
@@ -26,7 +32,7 @@ function Invoke-Docker([string[]]$arguments) {
     $previousErrorActionPreference = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
     try {
-        $output = & docker @arguments 2>&1
+        $output = & $dockerPath @arguments 2>&1
         $exitCode = $LASTEXITCODE
     }
     finally {
@@ -41,9 +47,13 @@ function Invoke-Docker([string[]]$arguments) {
 }
 
 try {
+    if (-not $dockerPath) {
+        throw 'Docker CLI was not found. Install or start Docker Desktop first.'
+    }
+
     $deadline = (Get-Date).AddMinutes(5)
     do {
-        & docker info 1>$null 2>$null
+        & $dockerPath info 1>$null 2>$null
         if ($LASTEXITCODE -eq 0) { break }
         Start-Sleep -Seconds 10
     } while ((Get-Date) -lt $deadline)

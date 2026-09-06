@@ -264,8 +264,8 @@ docker compose exec -T db psql -U ved ved < backup.sql
 | `VED RTP Local Start` | через 2 минуты после входа в Windows | ждёт Docker Desktop, пересобирает контейнеры, запускает стек и проверяет `/api/health` |
 | `VED RTP GitHub Auto Sync` | через 1 минуту после входа в Windows | сохраняет неигнорируемые изменения в Git и отправляет их в `origin/main` |
 
-Логи находятся вне репозитория: `%LOCALAPPDATA%\VED-RTP\local-app.log` и
-`%LOCALAPPDATA%\VED-RTP\github-sync.log`.
+Логи находятся в игнорируемой Git папке `.runtime`: `.runtime\local-app.log`
+и `.runtime\github-sync.log`.
 
 Автосинхронизация не выполняет опасный автоматический merge. Если удалённая
 ветка была изменена на другом компьютере одновременно с локальными файлами,

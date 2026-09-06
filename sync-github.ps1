@@ -12,7 +12,7 @@
 $ErrorActionPreference = 'Stop'
 
 $repoPath = $PSScriptRoot
-$logDir = Join-Path $env:LOCALAPPDATA 'VED-RTP'
+$logDir = Join-Path $repoPath '.runtime'
 $logPath = Join-Path $logDir 'github-sync.log'
 $mutex = New-Object System.Threading.Mutex($false, 'Local\VED-RTP-GitHubAutoSync')
 $hasSyncLock = $false
