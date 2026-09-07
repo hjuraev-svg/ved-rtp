@@ -20,6 +20,10 @@ esa haqiqiy tashqi manzil bo‘ladi (bu loyiha uchun masalan
 odatda bo‘sh qoldiriladi: tizim o‘zi
 `$PUBLIC_BASE_URL/api/integrations/gmail/callback` ni ishlatadi.
 
+Public server uchun qo‘lda `.env` tahrir qilish shart emas: SSH deploy kaliti
+ulangandan keyin `configure-public-integrations.ps1` skripti qiymatlarni
+interaktiv va Git’ga kiritmasdan yozadi.
+
 ## 2. Gmail
 
 Google Cloud Console’da yangi loyiha yarating, **Gmail API** ni yoqing va
