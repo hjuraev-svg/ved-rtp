@@ -4,6 +4,7 @@ import { useAuth, useLiveData, useToast } from '../store'
 import type {
   Claim,
   Comment,
+  CommunicationMessage,
   Deal,
   DocumentItem,
   ChecklistItem,
@@ -29,7 +30,7 @@ import {
   fmtMoney,
 } from '../util'
 
-type Tab = 'overview' | 'checklist' | 'docs' | 'quotes' | 'claims' | 'history'
+type Tab = 'overview' | 'checklist' | 'docs' | 'quotes' | 'claims' | 'messages' | 'history'
 
 export default function DealDetail({
   dealId,
@@ -141,6 +142,7 @@ export default function DealDetail({
               ['docs', 'Документы'],
               ['quotes', 'КП'],
               ['claims', 'Претензии'],
+              ['messages', 'Почта и Telegram'],
               ['history', 'История'],
             ] as [Tab, string][]
           ).map(([key, label]) => (
@@ -160,6 +162,7 @@ export default function DealDetail({
       {tab === 'docs' && <Documents dealId={dealId} />}
       {tab === 'quotes' && <Quotes dealId={dealId} onChanged={reload} />}
       {tab === 'claims' && <Claims dealId={dealId} />}
+      {tab === 'messages' && <Messages dealId={dealId} />}
       {tab === 'history' && <History dealId={dealId} />}
 
       {moving !== null && (
@@ -170,6 +173,76 @@ export default function DealDetail({
         />
       )}
     </>
+  )
+}
+
+// ---------------------------------------------------------- communications
+function Messages({ dealId }: { dealId: number }) {
+  const { canEdit } = useAuth()
+  const { notify } = useToast()
+  const { data, loading, error, reload } = useLiveData<CommunicationMessage[]>(
+    () => api.get(`/api/deals/${dealId}/messages`), [dealId], (event) => event.startsWith('message'),
+  )
+  const [provider, setProvider] = useState('gmail')
+  const [recipient, setRecipient] = useState('')
+  const [subject, setSubject] = useState('')
+  const [body, setBody] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  async function send() {
+    if (!body.trim()) return notify('Xabar matnini kiriting', 'err')
+    setBusy(true)
+    try {
+      await api.post(`/api/deals/${dealId}/messages`, { provider, recipient, subject, body })
+      notify(provider === 'gmail' ? 'Email yuborildi' : 'Telegram xabari yuborildi')
+      setBody(''); setSubject(''); setRecipient(''); reload()
+    } catch (e: any) {
+      notify(e?.message ?? 'Xabar yuborilmadi', 'err')
+    } finally { setBusy(false) }
+  }
+
+  if (loading && !data) return <Loading />
+  if (error) return <ErrorBox message={error} />
+  return (
+    <div style={{ display: 'grid', gap: 16 }}>
+      {canEdit && (
+        <Panel title="Yangi xabar">
+          <div className="grid-2" style={{ marginBottom: 12 }}>
+            <Field label="Kanal">
+              <select className="input" value={provider} onChange={(e) => setProvider(e.target.value)}>
+                <option value="gmail">Gmail</option>
+                <option value="telegram">Telegram</option>
+              </select>
+            </Field>
+            <Field label={provider === 'gmail' ? 'Qabul qiluvchi email (bo‘sh = supplier email)' : 'Chat ID (bo‘sh = supplier Telegram chat ID)'}>
+              <input className="input" value={recipient} onChange={(e) => setRecipient(e.target.value)} />
+            </Field>
+          </div>
+          {provider === 'gmail' && <Field label="Mavzu"><input className="input" value={subject} onChange={(e) => setSubject(e.target.value)} /></Field>}
+          <Field label="Xabar"><textarea className="textarea" rows={5} value={body} onChange={(e) => setBody(e.target.value)} /></Field>
+          <div className="row" style={{ justifyContent: 'flex-end', marginTop: 12 }}>
+            <button className="btn primary" disabled={busy} onClick={send}>{busy ? 'Yuborilmoqda…' : 'Yuborish'}</button>
+          </div>
+        </Panel>
+      )}
+      <Panel title="Aloqa tarixi">
+        {!data?.length ? <Empty text="Bu bitim uchun xabarlar hali yo‘q." /> : (
+          <div style={{ display: 'grid', gap: 10 }}>
+            {data.map((message) => (
+              <div key={message.id} style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 12 }}>
+                <div className="row wrap" style={{ gap: 8 }}>
+                  <span className={`badge ${message.direction === 'incoming' ? 'blue' : 'green'}`}>{message.provider === 'gmail' ? 'Gmail' : 'Telegram'} · {message.direction === 'incoming' ? 'Kirish' : 'Chiqish'}</span>
+                  {message.subject && <b className="small">{message.subject}</b>}
+                  <span className="small faint">{message.direction === 'incoming' ? message.sender : message.recipients.join(', ')}</span>
+                  <span className="small faint" style={{ marginLeft: 'auto' }}>{fmtDateTime(message.received_at || message.sent_at || message.created_at)}</span>
+                </div>
+                <div style={{ whiteSpace: 'pre-wrap', marginTop: 8 }}>{message.body}</div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Panel>
+    </div>
   )
 }
 

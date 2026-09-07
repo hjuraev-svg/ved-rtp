@@ -1,3 +1,5 @@
+import asyncio
+import contextlib
 import logging
 from contextlib import asynccontextmanager
 
@@ -9,8 +11,9 @@ from .config import settings
 from .db import Base, SessionLocal, engine
 from .migrate import run as run_migrations
 from .models import *  # noqa: F401,F403  (registers all tables on Base.metadata)
+from .integrations import sync_gmail
 from .realtime import hub
-from .routers import auth, catalog, dashboard, deals, export, files, ws
+from .routers import auth, catalog, communications, dashboard, deals, export, files, ws
 from .seed import run_seed
 
 logging.basicConfig(
@@ -28,8 +31,28 @@ async def lifespan(app: FastAPI):
         await run_migrations(conn)
     async with SessionLocal() as db:
         await run_seed(db)
+    async def inbox_worker():
+        # Gmail push needs additional Google Cloud Pub/Sub infrastructure. A
+        # short, configurable poll is reliable for one mailbox and continues
+        # to work on the user's local Docker installation.
+        while True:
+            await asyncio.sleep(max(1, settings.gmail_poll_interval_minutes) * 60)
+            if settings.gmail_poll_interval_minutes <= 0:
+                continue
+            try:
+                async with SessionLocal() as db:
+                    await sync_gmail(db, limit=50)
+            except Exception as exc:  # never take down the API for a mail outage
+                log.warning("Gmail background sync skipped: %s", exc)
+
+    worker = asyncio.create_task(inbox_worker(), name="gmail-inbox-sync")
     log.info("%s API ready", settings.app_name)
-    yield
+    try:
+        yield
+    finally:
+        worker.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await worker
     await engine.dispose()
 
 
@@ -62,6 +85,7 @@ app.include_router(dashboard.router)
 app.include_router(catalog.router)
 app.include_router(export.router)
 app.include_router(ws.router)
+app.include_router(communications.router)
 
 
 @app.get("/api/health", tags=["system"])

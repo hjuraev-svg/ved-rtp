@@ -37,6 +37,7 @@ export interface Supplier {
   email: string
   phone: string
   messenger: string
+  telegram_chat_id: string
   notes: string
   is_active: boolean
 }
@@ -240,4 +241,29 @@ export interface CycleTime {
   avg_days: number
   sla_days: number | null
   samples: number
+}
+
+export interface Integration {
+  provider: string
+  status: string
+  configured: boolean
+  label: string
+  last_synced_at: string | null
+  last_error: string
+}
+
+export interface CommunicationMessage {
+  id: number
+  deal_id: number | null
+  provider: string
+  direction: string
+  external_id: string
+  sender: string
+  recipients: string[]
+  subject: string
+  body: string
+  status: string
+  sent_at: string | null
+  received_at: string | null
+  created_at: string
 }

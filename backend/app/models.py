@@ -66,6 +66,7 @@ class Supplier(Base):
     phone: Mapped[str] = mapped_column(String(80), default="")
     # WhatsApp / WeChat / Telegram / GMAIL — per block 2 data source
     messenger: Mapped[str] = mapped_column(String(160), default="")
+    telegram_chat_id: Mapped[str] = mapped_column(String(80), default="")
     notes: Mapped[str] = mapped_column(Text, default="")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
@@ -295,3 +296,50 @@ class Comment(Base):
     user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     body: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class IntegrationConnection(Base):
+    """One organisation-level Gmail mailbox and one Telegram bot.
+
+    Sensitive tokens are encrypted before storage; `config` only holds public
+    metadata such as the connected address and the temporary OAuth state.
+    """
+
+    __tablename__ = "integration_connections"
+    __table_args__ = (UniqueConstraint("provider", name="uq_integration_provider"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    provider: Mapped[str] = mapped_column(String(24), index=True)  # gmail | telegram
+    status: Mapped[str] = mapped_column(String(24), default="not_configured")
+    config: Mapped[dict] = mapped_column(JSON, default=dict)
+    encrypted_token: Mapped[str] = mapped_column(Text, default="")
+    last_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_error: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+
+
+class CommunicationMessage(Base):
+    """An auditable inbox/outbox item linked to a deal when it can be matched."""
+
+    __tablename__ = "communication_messages"
+    __table_args__ = (UniqueConstraint("provider", "external_id", name="uq_message_external"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    deal_id: Mapped[int | None] = mapped_column(
+        ForeignKey("deals.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    provider: Mapped[str] = mapped_column(String(24), index=True)
+    direction: Mapped[str] = mapped_column(String(12))  # incoming | outgoing
+    external_id: Mapped[str] = mapped_column(String(200), default="")
+    sender: Mapped[str] = mapped_column(String(320), default="")
+    recipients: Mapped[list] = mapped_column(JSON, default=list)
+    subject: Mapped[str] = mapped_column(String(500), default="")
+    body: Mapped[str] = mapped_column(Text, default="")
+    status: Mapped[str] = mapped_column(String(24), default="sent")
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    received_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    metadata_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)

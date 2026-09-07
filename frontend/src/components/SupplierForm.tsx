@@ -11,6 +11,7 @@ export const BLANK_SUPPLIER: NewSupplier = {
   email: '',
   phone: '',
   messenger: '',
+  telegram_chat_id: '',
   notes: '',
   is_active: true,
 }
@@ -86,6 +87,14 @@ export default function SupplierForm({
             value={form.messenger}
             placeholder="WhatsApp / WeChat / Telegram / GMAIL"
             onChange={(e) => set('messenger', e.target.value)}
+          />
+        </Field>
+        <Field label="Telegram chat ID (для бота)">
+          <input
+            className="input"
+            value={form.telegram_chat_id}
+            placeholder="Например: 123456789 или -100..."
+            onChange={(e) => set('telegram_chat_id', e.target.value.trim())}
           />
         </Field>
         <Field label="Примечания">

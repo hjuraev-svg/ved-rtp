@@ -18,5 +18,16 @@ class Settings(BaseSettings):
 
     app_name: str = "ВЭД RTP"
 
+    # Communication integrations. Keep real values in `.env`; that file is
+    # deliberately ignored by Git and never exposed by the API.
+    public_base_url: str = "http://localhost:8090"
+    integration_encryption_key: str = ""
+    gmail_client_id: str = ""
+    gmail_client_secret: str = ""
+    gmail_redirect_uri: str = ""
+    telegram_bot_token: str = ""
+    telegram_webhook_secret: str = ""
+    gmail_poll_interval_minutes: int = 5
+
 
 settings = Settings()

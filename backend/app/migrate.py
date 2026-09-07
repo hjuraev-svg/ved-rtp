@@ -24,6 +24,8 @@ STATEMENTS = [
     "ALTER TABLE doc_types ADD COLUMN IF NOT EXISTS pipeline VARCHAR(16) NOT NULL DEFAULT 'import'",
     "CREATE INDEX IF NOT EXISTS ix_stages_pipeline ON stages (pipeline)",
     "CREATE INDEX IF NOT EXISTS ix_deals_pipeline ON deals (pipeline)",
+    # 2026-09: one Telegram conversation per supplier (optional).
+    "ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS telegram_chat_id VARCHAR(80) NOT NULL DEFAULT ''",
 ]
 
 

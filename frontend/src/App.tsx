@@ -8,6 +8,7 @@ import Suppliers from './pages/Suppliers'
 import Blocks from './pages/Blocks'
 import Analytics from './pages/Analytics'
 import Users from './pages/Users'
+import Integrations from './pages/Integrations'
 import { ROLE_LABELS } from './util'
 
 const NAV: { path: string; label: string; icon: string; adminOnly?: boolean }[] = [
@@ -17,6 +18,7 @@ const NAV: { path: string; label: string; icon: string; adminOnly?: boolean }[] 
   { path: 'suppliers', label: 'Поставщики', icon: '⚑' },
   { path: 'blocks', label: 'Справочник блоков', icon: '❑' },
   { path: 'users', label: 'Пользователи', icon: '☺', adminOnly: true },
+  { path: 'integrations', label: 'Почта и Telegram', icon: '✉', adminOnly: true },
 ]
 
 const TITLES: Record<string, string> = {
@@ -26,6 +28,7 @@ const TITLES: Record<string, string> = {
   suppliers: 'Поставщики',
   blocks: 'Справочник блоков дашборда',
   users: 'Пользователи и доступ',
+  integrations: 'Почта и Telegram',
 }
 
 export default function App() {
@@ -60,6 +63,7 @@ export default function App() {
   else if (section === 'suppliers') page = <Suppliers />
   else if (section === 'blocks') page = <Blocks />
   else if (section === 'users') page = <Users />
+  else if (section === 'integrations') page = <Integrations />
   else page = <div className="empty">Страница не найдена</div>
 
   return (

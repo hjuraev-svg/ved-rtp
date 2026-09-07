@@ -102,6 +102,7 @@ class SupplierOut(ORMModel):
     email: str
     phone: str
     messenger: str
+    telegram_chat_id: str
     notes: str
     is_active: bool
 
@@ -113,6 +114,7 @@ class SupplierIn(BaseModel):
     email: str = ""
     phone: str = ""
     messenger: str = ""
+    telegram_chat_id: str = ""
     notes: str = ""
     is_active: bool = True
 
@@ -363,6 +365,39 @@ class CommentOut(ORMModel):
     user_id: int | None
     author: str = ""
     body: str
+    created_at: datetime
+
+
+# ---------- Gmail / Telegram communications ----------
+class IntegrationOut(BaseModel):
+    provider: str
+    status: str
+    configured: bool
+    label: str = ""
+    last_synced_at: datetime | None = None
+    last_error: str = ""
+
+
+class CommunicationSend(BaseModel):
+    provider: str
+    body: str = Field(min_length=1, max_length=20000)
+    subject: str = Field(default="", max_length=500)
+    recipient: str = Field(default="", max_length=320)
+
+
+class CommunicationMessageOut(ORMModel):
+    id: int
+    deal_id: int | None
+    provider: str
+    direction: str
+    external_id: str
+    sender: str
+    recipients: list[str]
+    subject: str
+    body: str
+    status: str
+    sent_at: datetime | None
+    received_at: datetime | None
     created_at: datetime
 
 
