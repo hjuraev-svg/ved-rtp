@@ -2,6 +2,13 @@
 
 Gmail va Telegram ulanishi bo‘yicha amaliy qo‘llanma: [INTEGRATIONS.md](INTEGRATIONS.md).
 
+## Ishchi muhit
+
+Asosiy ishchi tizim — `https://jnslabsonline.uz/ved`. Laptopdagi ushbu papka
+faqat kodni GitHub bilan xavfsiz saqlash uchun ishlatiladi; u avtomatik ravishda
+lokal Docker serverini ishga tushirmaydi. Kod o‘zgarishlari Windows ish paytida
+har besh daqiqada GitHub’ga yuboriladi.
+
 Оперативная система контроля внешнеэкономической деятельности. Это рабочая
 замена файлу `Дашборд_ВЭД.xlsx`: те же **18 блоков**, тот же **чек-лист из 24
 пунктов**, те же нормативы «красной зоны» — но с живыми данными, историей
