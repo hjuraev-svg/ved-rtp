@@ -9,3 +9,7 @@ dist/
 *.sqlite3
 *.tsbuildinfo
 .runtime/
+
+# Импорт закупок: выгрузки и дампы не коммитим — это рабочие данные
+tools/procurement.json
+*.sql

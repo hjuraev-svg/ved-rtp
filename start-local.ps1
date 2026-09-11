@@ -51,7 +51,27 @@ try {
         throw 'Docker CLI was not found. Install or start Docker Desktop first.'
     }
 
-    $deadline = (Get-Date).AddMinutes(5)
+    # Start the engine ourselves rather than relying on Docker Desktop's own
+    # "start on login" setting. That setting lives in settings-store.json, which
+    # Docker rewrites when it exits, so it cannot be trusted to survive a
+    # shutdown — and when it is off, nothing brings the stack up in the morning.
+    & $dockerPath info 1>$null 2>$null
+    if ($LASTEXITCODE -ne 0) {
+        $desktop = @(
+            "$env:LOCALAPPDATA\Programs\DockerDesktop\Docker Desktop.exe",
+            "$env:ProgramFiles\Docker\Docker\Docker Desktop.exe"
+        ) | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1
+        if ($desktop) {
+            Write-AppLog "Docker engine is down; launching $desktop"
+            Start-Process -FilePath $desktop | Out-Null
+        }
+        else {
+            Write-AppLog 'Docker Desktop executable not found; waiting in case it is already starting.'
+        }
+    }
+
+    # A cold boot of the engine is slower than a warm one, so allow ten minutes.
+    $deadline = (Get-Date).AddMinutes(10)
     do {
         & $dockerPath info 1>$null 2>$null
         if ($LASTEXITCODE -eq 0) { break }
@@ -59,7 +79,7 @@ try {
     } while ((Get-Date) -lt $deadline)
 
     if ($LASTEXITCODE -ne 0) {
-        throw 'Docker Desktop did not become ready within five minutes.'
+        throw 'Docker Desktop did not become ready within ten minutes.'
     }
 
     $composeFile = Join-Path $repoPath 'docker-compose.yml'
