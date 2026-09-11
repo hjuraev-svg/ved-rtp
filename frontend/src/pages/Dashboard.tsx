@@ -4,7 +4,7 @@ import { useLiveData, useToast } from '../store'
 import type { Dashboard as DashboardData, Pipeline, Tile } from '../types'
 import { Empty, ErrorBox, Loading } from '../components/ui'
 import { GripIcon, StageIcon } from '../components/icons'
-import { GROUP_COLORS, days, fmtDateTime, fmtMoney } from '../util'
+import { GROUP_COLORS, days, fmtDateTime } from '../util'
 
 interface Layout {
   tile_order: number[]
@@ -135,10 +135,7 @@ export default function Dashboard({ navigate }: { navigate: (p: string) => void 
   if (error) return <ErrorBox message={error} />
   if (!data) return null
 
-  const { kpi, alerts, groups } = data
-  const isImport = data.pipeline === 'import'
-  const money = (list: { currency: string; amount: string }[]) =>
-    list.length ? list.map((m) => fmtMoney(m.amount, m.currency)).join(' · ') : '—'
+  const { alerts, groups } = data
 
   return (
     <>
@@ -158,62 +155,6 @@ export default function Dashboard({ navigate }: { navigate: (p: string) => void 
           </div>
         </div>
       )}
-
-      <div className="kpi-row">
-        <div className="card kpi">
-          <div className="label">Активных сделок</div>
-          <div className="value">{kpi.active_deals}</div>
-          <div className="sub">
-            в работе, этапов: {data.tiles.length}
-          </div>
-        </div>
-        <div className={`card kpi ${kpi.overdue_deals ? 'alert' : ''}`}>
-          <div className="label">Красная зона</div>
-          <div className="value">{kpi.overdue_deals}</div>
-          <div className="sub">превышен норматив этапа</div>
-        </div>
-        <div className="card kpi">
-          <div className="label">Контракты за месяц</div>
-          <div className="value">{kpi.contracts_signed_month}</div>
-          <div className="sub">{money(kpi.contracts_amount_month)}</div>
-        </div>
-        {isImport && (
-        <div className="card kpi">
-          <div className="label">В пути</div>
-          <div className="value">{kpi.in_transit}</div>
-          <div className="sub">прибывает за неделю: {kpi.arriving_this_week}</div>
-        </div>
-        )}
-        {isImport && (
-        <div className="card kpi">
-          <div className="label">Срок растаможки</div>
-          <div className="value">{kpi.avg_customs_days ?? '—'}</div>
-          <div className="sub">ср. раб. дней подача → выпуск</div>
-        </div>
-        )}
-        <div className="card kpi">
-          <div className="label">Готовность документов</div>
-          <div className="value">{kpi.docs_ready_pct}%</div>
-          <div className="sub">получено / требуется</div>
-        </div>
-        {isImport && (
-        <div className="card kpi">
-          <div className="label">УНК</div>
-          <div className="value">
-            {kpi.unk_registered}
-            {kpi.unk_missing > 0 && (
-              <span style={{ color: 'var(--red)', fontSize: 17 }}> / −{kpi.unk_missing}</span>
-            )}
-          </div>
-          <div className="sub">зарегистрировано в банке</div>
-        </div>
-        )}
-        <div className={`card kpi ${kpi.open_claims ? 'alert' : ''}`}>
-          <div className="label">Открытые претензии</div>
-          <div className="value">{kpi.open_claims}</div>
-          <div className="sub">{money(kpi.claims_amount)}</div>
-        </div>
-      </div>
 
       {editing ? (
         <div className="editbar">
