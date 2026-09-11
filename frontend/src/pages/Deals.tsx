@@ -25,6 +25,9 @@ export default function Deals({ navigate, initialStage, initialPipeline }: Props
   const [q, setQ] = useState('')
   const [sort, setSort] = useState('oldest_in_stage')
   const [creating, setCreating] = useState(false)
+  const [selected, setSelected] = useState<Set<number>>(new Set())
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  const [deleting, setDeleting] = useState(false)
 
   useEffect(() => setStageId(initialStage), [initialStage])
   useEffect(() => {
@@ -56,6 +59,50 @@ export default function Deals({ navigate, initialStage, initialPipeline }: Props
     () => api.get(`/api/deals?${query}`),
     [query],
   )
+
+  // Never carry a selection across a filter change — the rows it refers to may
+  // no longer be on screen, and deleting something you cannot see is the one
+  // mistake this dialog exists to prevent.
+  useEffect(() => setSelected(new Set()), [query])
+
+  const rows = data?.items ?? []
+  const chosen = rows.filter((d) => selected.has(d.id))
+  const allShownSelected = rows.length > 0 && chosen.length === rows.length
+
+  function toggle(id: number) {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
+  }
+
+  function toggleAllShown() {
+    setSelected(allShownSelected ? new Set() : new Set(rows.map((d) => d.id)))
+  }
+
+  async function deleteSelected() {
+    setDeleting(true)
+    const ids = chosen.map((d) => d.id)
+    const failed: string[] = []
+    for (const id of ids) {
+      try {
+        await api.del(`/api/deals/${id}`)
+      } catch {
+        failed.push(rows.find((d) => d.id === id)?.code ?? String(id))
+      }
+    }
+    setDeleting(false)
+    setConfirmDelete(false)
+    setSelected(new Set())
+    const done = ids.length - failed.length
+    if (failed.length) {
+      notify(`Удалено ${done} из ${ids.length}. Не удалось: ${failed.join(', ')}`, 'err')
+    } else {
+      notify(`Удалено сделок: ${done}`)
+    }
+    reload()
+  }
 
   function exportCsv() {
     // The download endpoint needs the bearer token, so fetch as a blob.
@@ -141,6 +188,15 @@ export default function Deals({ navigate, initialStage, initialPipeline }: Props
         <button className="btn" onClick={exportCsv}>
           ↓ CSV
         </button>
+        {canEdit && chosen.length > 0 && (
+          <button
+            className="btn danger"
+            onClick={() => setConfirmDelete(true)}
+            title="Безвозвратно удалить выбранные сделки"
+          >
+            🗑 Удалить ({chosen.length})
+          </button>
+        )}
         {canEdit && (
           <button className="btn primary" onClick={() => setCreating(true)}>
             + Сделка
@@ -161,6 +217,17 @@ export default function Deals({ navigate, initialStage, initialPipeline }: Props
             <table className="data">
               <thead>
                 <tr>
+                  {canEdit && (
+                    <th style={{ width: 34 }}>
+                      <input
+                        type="checkbox"
+                        checked={allShownSelected}
+                        title="Выделить всё показанное"
+                        style={{ width: 15, height: 15, cursor: 'pointer' }}
+                        onChange={toggleAllShown}
+                      />
+                    </th>
+                  )}
                   <th>Код</th>
                   <th>Наименование</th>
                   <th>Тип</th>
@@ -176,7 +243,22 @@ export default function Deals({ navigate, initialStage, initialPipeline }: Props
               </thead>
               <tbody>
                 {data.items.map((d) => (
-                  <tr key={d.id} onClick={() => navigate(`deal/${d.id}`)}>
+                  <tr
+                    key={d.id}
+                    className={selected.has(d.id) ? 'selected' : ''}
+                    onClick={() => navigate(`deal/${d.id}`)}
+                  >
+                    {canEdit && (
+                      // stopPropagation: ticking the box must not open the deal
+                      <td onClick={(e) => e.stopPropagation()}>
+                        <input
+                          type="checkbox"
+                          checked={selected.has(d.id)}
+                          style={{ width: 15, height: 15, cursor: 'pointer' }}
+                          onChange={() => toggle(d.id)}
+                        />
+                      </td>
+                    )}
                     <td className="mono faint nowrap">{d.code}</td>
                     <td>
                       <div style={{ fontWeight: 550 }}>{d.title}</div>
@@ -216,6 +298,47 @@ export default function Deals({ navigate, initialStage, initialPipeline }: Props
             Показано {data.items.length} из {data.total}
           </div>
         </>
+      )}
+
+      {confirmDelete && (
+        <Modal
+          title={`Удалить сделок: ${chosen.length}?`}
+          onClose={() => !deleting && setConfirmDelete(false)}
+          footer={
+            <div className="row" style={{ justifyContent: 'flex-end' }}>
+              <button className="btn" disabled={deleting} onClick={() => setConfirmDelete(false)}>
+                Отмена
+              </button>
+              <button className="btn danger" disabled={deleting} onClick={deleteSelected}>
+                {deleting ? 'Удаление…' : `Удалить ${chosen.length}`}
+              </button>
+            </div>
+          }
+        >
+          <p style={{ marginTop: 0 }}>
+            Вместе со сделкой удаляются её документы, отметки чек-листа, КП,
+            претензии, комментарии и вся история движения по этапам.
+          </p>
+          <p className="small" style={{ color: 'var(--red)' }}>
+            Действие необратимо — отменить его из интерфейса нельзя.
+          </p>
+          <div
+            className="small mono"
+            style={{
+              maxHeight: 190,
+              overflowY: 'auto',
+              border: '1px solid var(--border)',
+              borderRadius: 8,
+              padding: 10,
+            }}
+          >
+            {chosen.map((d) => (
+              <div key={d.id} style={{ padding: '2px 0' }}>
+                {d.code} · {d.title}
+              </div>
+            ))}
+          </div>
+        </Modal>
       )}
 
       {creating && (

@@ -585,6 +585,12 @@ table.data tbody tr {
 table.data tbody tr:hover {
   background: var(--panel-2);
 }
+/* Rows ticked for deletion. Tinted red rather than neutral: the selection only
+   ever feeds a destructive action, so it should not read as a calm highlight. */
+table.data tbody tr.selected,
+table.data tbody tr.selected:hover {
+  background: var(--red-soft);
+}
 table.data tbody tr:last-child td {
   border-bottom: none;
 }
