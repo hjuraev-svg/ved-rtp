@@ -46,6 +46,24 @@ function Invoke-Docker([string[]]$arguments) {
     }
 }
 
+function Test-DockerReady {
+    # `docker info` against a stopped engine writes to stderr. Under
+    # $ErrorActionPreference = 'Stop', PowerShell 5.1 turns a native command's
+    # redirected stderr into a *terminating* NativeCommandError — so probing a
+    # stopped engine aborted the whole script instead of entering the wait loop
+    # below. That is why nothing came up on mornings when Docker was not already
+    # running. Drop to 'Continue' for the probe and judge only by exit code.
+    $previousErrorActionPreference = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        & $dockerPath info 2>&1 | Out-Null
+        return $LASTEXITCODE -eq 0
+    }
+    finally {
+        $ErrorActionPreference = $previousErrorActionPreference
+    }
+}
+
 try {
     if (-not $dockerPath) {
         throw 'Docker CLI was not found. Install or start Docker Desktop first.'
@@ -55,8 +73,8 @@ try {
     # "start on login" setting. That setting lives in settings-store.json, which
     # Docker rewrites when it exits, so it cannot be trusted to survive a
     # shutdown — and when it is off, nothing brings the stack up in the morning.
-    & $dockerPath info 1>$null 2>$null
-    if ($LASTEXITCODE -ne 0) {
+    $ready = Test-DockerReady
+    if (-not $ready) {
         $desktop = @(
             "$env:LOCALAPPDATA\Programs\DockerDesktop\Docker Desktop.exe",
             "$env:ProgramFiles\Docker\Docker\Docker Desktop.exe"
@@ -68,19 +86,19 @@ try {
         else {
             Write-AppLog 'Docker Desktop executable not found; waiting in case it is already starting.'
         }
+
+        # A cold boot of the engine is slower than a warm one, so allow ten minutes.
+        $deadline = (Get-Date).AddMinutes(10)
+        while (-not $ready -and (Get-Date) -lt $deadline) {
+            Start-Sleep -Seconds 10
+            $ready = Test-DockerReady
+        }
     }
 
-    # A cold boot of the engine is slower than a warm one, so allow ten minutes.
-    $deadline = (Get-Date).AddMinutes(10)
-    do {
-        & $dockerPath info 1>$null 2>$null
-        if ($LASTEXITCODE -eq 0) { break }
-        Start-Sleep -Seconds 10
-    } while ((Get-Date) -lt $deadline)
-
-    if ($LASTEXITCODE -ne 0) {
+    if (-not $ready) {
         throw 'Docker Desktop did not become ready within ten minutes.'
     }
+    Write-AppLog 'Docker engine is ready.'
 
     $composeFile = Join-Path $repoPath 'docker-compose.yml'
     Invoke-Docker @('compose', '--project-directory', $repoPath, '-f', $composeFile, 'up', '-d', '--build', '--wait', '--wait-timeout', '120')
