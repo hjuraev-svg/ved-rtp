@@ -33,6 +33,7 @@ export interface Supplier {
   id: number
   name: string
   country: string
+  category: string
   contact_person: string
   email: string
   phone: string

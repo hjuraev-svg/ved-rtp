@@ -98,6 +98,7 @@ class SupplierOut(ORMModel):
     id: int
     name: str
     country: str
+    category: str
     contact_person: str
     email: str
     phone: str
@@ -110,6 +111,7 @@ class SupplierOut(ORMModel):
 class SupplierIn(BaseModel):
     name: str
     country: str = ""
+    category: str = ""
     contact_person: str = ""
     email: str = ""
     phone: str = ""

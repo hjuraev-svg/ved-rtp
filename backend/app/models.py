@@ -61,6 +61,10 @@ class Supplier(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(200), index=True)
     country: Mapped[str] = mapped_column(String(80), default="")
+    # Товарная категория: Парфюмерия, Оборудование, Ингредиенты, Транспорт…
+    # Свободный текст, а не перечисление: номенклатура закупок меняется чаще,
+    # чем стоило бы править схему.
+    category: Mapped[str] = mapped_column(String(80), default="", index=True)
     contact_person: Mapped[str] = mapped_column(String(160), default="")
     email: Mapped[str] = mapped_column(String(160), default="")
     phone: Mapped[str] = mapped_column(String(80), default="")

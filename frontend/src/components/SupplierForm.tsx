@@ -7,6 +7,7 @@ export type NewSupplier = Omit<Supplier, 'id'>
 export const BLANK_SUPPLIER: NewSupplier = {
   name: '',
   country: '',
+  category: '',
   contact_person: '',
   email: '',
   phone: '',
@@ -22,11 +23,14 @@ export default function SupplierForm({
   onClose,
   onSave,
   busy,
+  categories = [],
 }: {
   supplier: Supplier | NewSupplier
   onClose: () => void
   onSave: (s: Supplier | NewSupplier) => void
   busy?: boolean
+  /** Categories already in use — offered as suggestions, not enforced. */
+  categories?: string[]
 }) {
   const [form, setForm] = useState(supplier)
   const set = (k: string, v: any) => setForm((f) => ({ ...f, [k]: v }))
@@ -65,6 +69,22 @@ export default function SupplierForm({
               onChange={(e) => set('country', e.target.value)}
             />
           </Field>
+          <Field label="Категория">
+            <input
+              className="input"
+              value={form.category}
+              list="supplier-categories"
+              placeholder="Парфюмерия"
+              onChange={(e) => set('category', e.target.value)}
+            />
+            <datalist id="supplier-categories">
+              {categories.map((c) => (
+                <option key={c} value={c} />
+              ))}
+            </datalist>
+          </Field>
+        </div>
+        <div className="grid-2">
           <Field label="Контактное лицо">
             <input
               className="input"
@@ -72,23 +92,23 @@ export default function SupplierForm({
               onChange={(e) => set('contact_person', e.target.value)}
             />
           </Field>
-        </div>
-        <div className="grid-2">
           <Field label="Email">
             <input className="input" value={form.email} onChange={(e) => set('email', e.target.value)} />
           </Field>
+        </div>
+        <div className="grid-2">
           <Field label="Телефон">
             <input className="input" value={form.phone} onChange={(e) => set('phone', e.target.value)} />
           </Field>
+          <Field label="Мессенджер / канал связи">
+            <input
+              className="input"
+              value={form.messenger}
+              placeholder="WhatsApp / WeChat / Telegram"
+              onChange={(e) => set('messenger', e.target.value)}
+            />
+          </Field>
         </div>
-        <Field label="Мессенджер / канал связи">
-          <input
-            className="input"
-            value={form.messenger}
-            placeholder="WhatsApp / WeChat / Telegram / GMAIL"
-            onChange={(e) => set('messenger', e.target.value)}
-          />
-        </Field>
         <Field label="Telegram chat ID (для бота)">
           <input
             className="input"

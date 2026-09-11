@@ -97,13 +97,30 @@ async def doc_types(
 @router.get("/suppliers", response_model=list[SupplierOut])
 async def list_suppliers(
     include_inactive: bool = False,
+    category: str = "",
     db: AsyncSession = Depends(get_db),
     _: User = Depends(current_user),
 ):
-    stmt = select(Supplier).order_by(Supplier.name)
+    stmt = select(Supplier).order_by(Supplier.category, Supplier.name)
     if not include_inactive:
         stmt = stmt.where(Supplier.is_active.is_(True))
+    if category:
+        stmt = stmt.where(Supplier.category == category)
     return (await db.execute(stmt)).scalars().all()
+
+
+@router.get("/supplier-categories", response_model=list[str])
+async def list_supplier_categories(
+    db: AsyncSession = Depends(get_db), _: User = Depends(current_user)
+):
+    """Categories actually in use — fills the filter without a separate table."""
+    rows = await db.execute(
+        select(Supplier.category)
+        .where(Supplier.category != "")
+        .distinct()
+        .order_by(Supplier.category)
+    )
+    return list(rows.scalars().all())
 
 
 @router.post("/suppliers", response_model=SupplierOut, status_code=201)
