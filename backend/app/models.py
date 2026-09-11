@@ -76,6 +76,32 @@ class Supplier(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class Product(Base):
+    """Номенклатура: что закупается, под каким кодом и у кого.
+
+    Отдельная сущность, а не поле сделки: одна и та же позиция закупается
+    многократно, и её назначение не должно переписываться в каждой поставке.
+    """
+
+    __tablename__ = "products"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    # Внутренний код позиции. Намеренно без UNIQUE: у одной и той же позиции
+    # бывает свой код у каждого поставщика, и жёсткое ограничение мешало бы
+    # заводить номенклатуру по мере появления данных.
+    code: Mapped[str] = mapped_column(String(80), default="", index=True)
+    name: Mapped[str] = mapped_column(String(300), index=True)
+    # «Для чего используется» — назначение позиции в производстве.
+    usage: Mapped[str] = mapped_column(Text, default="")
+    supplier_id: Mapped[int | None] = mapped_column(
+        ForeignKey("suppliers.id"), nullable=True, index=True
+    )
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    supplier: Mapped[Supplier | None] = relationship(lazy="joined")
+
+
 class Deal(Base):
     """One tracked ВЭД case: заявка → контракт → отгрузка → приёмка."""
 

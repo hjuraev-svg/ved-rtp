@@ -43,6 +43,16 @@ export interface Supplier {
   is_active: boolean
 }
 
+export interface Product {
+  id: number
+  code: string
+  name: string
+  usage: string
+  supplier_id: number | null
+  supplier: Supplier | null
+  is_active: boolean
+}
+
 export interface Deal {
   id: number
   code: string

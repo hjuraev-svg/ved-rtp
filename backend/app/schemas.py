@@ -108,6 +108,24 @@ class SupplierOut(ORMModel):
     is_active: bool
 
 
+class ProductOut(ORMModel):
+    id: int
+    code: str
+    name: str
+    usage: str
+    supplier_id: int | None
+    supplier: SupplierOut | None
+    is_active: bool
+
+
+class ProductIn(BaseModel):
+    name: str
+    code: str = ""
+    usage: str = ""
+    supplier_id: int | None = None
+    is_active: bool = True
+
+
 class SupplierIn(BaseModel):
     name: str
     country: str = ""
