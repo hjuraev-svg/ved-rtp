@@ -288,6 +288,21 @@ STAGES = [
         "responsible": "Специалист ВЭД + склад",
         "sla_days": 5,
     },
+    {
+        "id": 19,
+        "pipeline": "import",
+        "code": "completed",
+        "name": "Завершено / на складе",
+        "group_key": "receiving",
+        "description": "Поставка полностью закрыта: товар оприходован на складе, документы подшиты, претензий нет либо они урегулированы.",
+        "how_to_count": "Кол-во закрытых поставок за период. Сделка остаётся здесь как архивная запись — норматив «красной зоны» не применяется.",
+        "data_source": "Приходный ордер склада, закрытый комплект документов",
+        "frequency": "По факту закрытия поставки",
+        "responsible": "Склад + специалист ВЭД",
+        # Terminal stage: nothing is overdue once the deal is finished, so it
+        # carries no SLA. `None` switches the red-zone rule off for this block.
+        "sla_days": None,
+    },
 ]
 
 

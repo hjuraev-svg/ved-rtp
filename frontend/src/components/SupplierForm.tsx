@@ -24,6 +24,7 @@ export default function SupplierForm({
   onSave,
   busy,
   categories = [],
+  countries = [],
 }: {
   supplier: Supplier | NewSupplier
   onClose: () => void
@@ -31,6 +32,8 @@ export default function SupplierForm({
   busy?: boolean
   /** Categories already in use — offered as suggestions, not enforced. */
   categories?: string[]
+  /** Countries already in use — same idea. */
+  countries?: string[]
 }) {
   const [form, setForm] = useState(supplier)
   const set = (k: string, v: any) => setForm((f) => ({ ...f, [k]: v }))
@@ -65,9 +68,15 @@ export default function SupplierForm({
             <input
               className="input"
               value={form.country}
+              list="supplier-countries"
               placeholder="Китай"
               onChange={(e) => set('country', e.target.value)}
             />
+            <datalist id="supplier-countries">
+              {countries.map((c) => (
+                <option key={c} value={c} />
+              ))}
+            </datalist>
           </Field>
           <Field label="Категория">
             <input
