@@ -29,6 +29,11 @@ STATEMENTS = [
     # 2026-09: product category per supplier (Парфюмерия, Оборудование, …).
     "ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS category VARCHAR(80) NOT NULL DEFAULT ''",
     "CREATE INDEX IF NOT EXISTS ix_suppliers_category ON suppliers (category)",
+    # 2026-09: номенклатура — тип позиции, единица измерения, артикул поставщика.
+    "ALTER TABLE products ADD COLUMN IF NOT EXISTS kind VARCHAR(80) NOT NULL DEFAULT ''",
+    "ALTER TABLE products ADD COLUMN IF NOT EXISTS unit VARCHAR(24) NOT NULL DEFAULT ''",
+    "ALTER TABLE products ADD COLUMN IF NOT EXISTS supplier_code VARCHAR(80) NOT NULL DEFAULT ''",
+    "CREATE INDEX IF NOT EXISTS ix_products_kind ON products (kind)",
 ]
 
 

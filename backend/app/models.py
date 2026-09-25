@@ -90,7 +90,16 @@ class Product(Base):
     # бывает свой код у каждого поставщика, и жёсткое ограничение мешало бы
     # заводить номенклатуру по мере появления данных.
     code: Mapped[str] = mapped_column(String(80), default="", index=True)
+    # Артикул поставщика — отдельно от внутреннего кода: у одной позиции свой
+    # номер в нашей номенклатуре и свой в прайсе поставщика.
+    supplier_code: Mapped[str] = mapped_column(String(80), default="")
     name: Mapped[str] = mapped_column(String(300), index=True)
+    # Тип: Сырьё, Упаковка, Готовая продукция, Оборудование, Запчасти…
+    # Свободный текст, как и категория поставщика: номенклатура шире, чем
+    # заранее известный перечень.
+    kind: Mapped[str] = mapped_column(String(80), default="", index=True)
+    # Единица измерения: кг, шт, л, м, упак.
+    unit: Mapped[str] = mapped_column(String(24), default="")
     # «Для чего используется» — назначение позиции в производстве.
     usage: Mapped[str] = mapped_column(Text, default="")
     supplier_id: Mapped[int | None] = mapped_column(
