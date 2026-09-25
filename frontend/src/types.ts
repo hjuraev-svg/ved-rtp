@@ -46,7 +46,10 @@ export interface Supplier {
 export interface Product {
   id: number
   code: string
+  supplier_code: string
   name: string
+  kind: string
+  unit: string
   usage: string
   supplier_id: number | null
   supplier: Supplier | null

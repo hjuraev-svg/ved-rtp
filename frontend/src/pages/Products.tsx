@@ -8,17 +8,33 @@ type NewProduct = Omit<Product, 'id' | 'supplier'>
 
 const BLANK: NewProduct = {
   code: '',
+  supplier_code: '',
   name: '',
+  kind: '',
+  unit: '',
   usage: '',
   supplier_id: null,
   is_active: true,
 }
+
+const NO_KIND = '—'
+/** Offered in the form; the field stays free text so an unforeseen type fits. */
+const KIND_SUGGESTIONS = [
+  'Сырьё',
+  'Упаковка',
+  'Готовая продукция',
+  'Оборудование',
+  'Запчасти',
+  'Прочее',
+]
+const UNIT_SUGGESTIONS = ['кг', 'г', 'л', 'мл', 'шт', 'упак', 'м', 'м²', 'рул']
 
 export default function Products() {
   const { canEdit } = useAuth()
   const { notify } = useToast()
   const [editing, setEditing] = useState<Product | NewProduct | null>(null)
   const [supplierId, setSupplierId] = useState('')
+  const [kind, setKind] = useState('')
   const [q, setQ] = useState('')
 
   const { data, reload } = useLiveData<Product[]>(
@@ -32,8 +48,21 @@ export default function Products() {
     (e) => e.startsWith('supplier'),
   )
 
+  // Tab counts come from the whole list, so labels stay put while filtering.
+  const kinds = useMemo(() => {
+    const counts = new Map<string, number>()
+    for (const p of data ?? []) {
+      const key = p.kind || NO_KIND
+      counts.set(key, (counts.get(key) ?? 0) + 1)
+    }
+    return [...counts.entries()].sort((a, b) =>
+      a[0] === NO_KIND ? 1 : b[0] === NO_KIND ? -1 : b[1] - a[1],
+    )
+  }, [data])
+
   const shown = useMemo(() => {
     let rows = data ?? []
+    if (kind) rows = rows.filter((p) => (p.kind || NO_KIND) === kind)
     if (supplierId) {
       rows =
         supplierId === 'none'
@@ -46,11 +75,12 @@ export default function Products() {
         (p) =>
           p.name.toLowerCase().includes(needle) ||
           p.code.toLowerCase().includes(needle) ||
+          p.supplier_code.toLowerCase().includes(needle) ||
           p.usage.toLowerCase().includes(needle),
       )
     }
     return rows
-  }, [data, supplierId, q])
+  }, [data, kind, supplierId, q])
 
   async function save(form: Product | NewProduct) {
     if (!form.name.trim()) return notify('Укажите наименование', 'err')
@@ -81,10 +111,29 @@ export default function Products() {
 
   return (
     <>
+      {kinds.length > 0 && (
+        <div className="card" style={{ marginBottom: 16 }}>
+          <div className="tabs">
+            <button className={`tab ${kind === '' ? 'active' : ''}`} onClick={() => setKind('')}>
+              Все · {data.length}
+            </button>
+            {kinds.map(([name, count]) => (
+              <button
+                key={name}
+                className={`tab ${kind === name ? 'active' : ''}`}
+                onClick={() => setKind(name)}
+              >
+                {name === NO_KIND ? 'Без типа' : name} · {count}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="filters">
         <input
           className="input grow"
-          placeholder="Поиск: наименование, код, назначение"
+          placeholder="Поиск: наименование, код, артикул, назначение"
           value={q}
           onChange={(e) => setQ(e.target.value)}
         />
@@ -128,6 +177,8 @@ export default function Products() {
               <tr>
                 <th>Код</th>
                 <th>Наименование</th>
+                <th>Тип</th>
+                <th className="num">Ед.</th>
                 <th>Для чего используется</th>
                 <th>Поставщик</th>
                 <th>Статус</th>
@@ -136,11 +187,20 @@ export default function Products() {
             <tbody>
               {shown.map((p) => (
                 <tr key={p.id} onClick={() => canEdit && setEditing(p)}>
-                  <td className="mono faint nowrap">{p.code || '—'}</td>
+                  <td className="mono faint nowrap">
+                    {p.code || '—'}
+                    {p.supplier_code && (
+                      <div className="small faint">{p.supplier_code}</div>
+                    )}
+                  </td>
                   <td>
                     <b style={{ fontWeight: 550 }}>{p.name}</b>
                   </td>
-                  <td className="small" style={{ maxWidth: 420 }}>
+                  <td className="nowrap">
+                    {p.kind ? <span className="badge">{p.kind}</span> : '—'}
+                  </td>
+                  <td className="num nowrap faint">{p.unit || '—'}</td>
+                  <td className="small" style={{ maxWidth: 380 }}>
                     {p.usage || '—'}
                   </td>
                   <td className="nowrap">{p.supplier?.name ?? '—'}</td>
@@ -231,10 +291,50 @@ function ProductForm({
               <input
                 className="input mono"
                 value={form.code}
-                placeholder="JNS-PRF-001"
+                placeholder="JNS 101"
                 onChange={(e) => set('code', e.target.value)}
               />
             </Field>
+            <Field label="Артикул поставщика">
+              <input
+                className="input mono"
+                value={form.supplier_code}
+                placeholder="код в прайсе поставщика"
+                onChange={(e) => set('supplier_code', e.target.value)}
+              />
+            </Field>
+          </div>
+          <div className="grid-2">
+            <Field label="Тип">
+              <input
+                className="input"
+                value={form.kind}
+                list="product-kinds"
+                placeholder="Сырьё"
+                onChange={(e) => set('kind', e.target.value)}
+              />
+              <datalist id="product-kinds">
+                {KIND_SUGGESTIONS.map((k) => (
+                  <option key={k} value={k} />
+                ))}
+              </datalist>
+            </Field>
+            <Field label="Единица измерения">
+              <input
+                className="input"
+                value={form.unit}
+                list="product-units"
+                placeholder="кг"
+                onChange={(e) => set('unit', e.target.value)}
+              />
+              <datalist id="product-units">
+                {UNIT_SUGGESTIONS.map((u) => (
+                  <option key={u} value={u} />
+                ))}
+              </datalist>
+            </Field>
+          </div>
+          <div className="grid-2">
             <Field label="Поставщик">
               <select
                 className="select"

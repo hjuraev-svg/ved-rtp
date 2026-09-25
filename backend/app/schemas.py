@@ -111,7 +111,10 @@ class SupplierOut(ORMModel):
 class ProductOut(ORMModel):
     id: int
     code: str
+    supplier_code: str
     name: str
+    kind: str
+    unit: str
     usage: str
     supplier_id: int | None
     supplier: SupplierOut | None
@@ -121,6 +124,9 @@ class ProductOut(ORMModel):
 class ProductIn(BaseModel):
     name: str
     code: str = ""
+    supplier_code: str = ""
+    kind: str = ""
+    unit: str = ""
     usage: str = ""
     supplier_id: int | None = None
     is_active: bool = True
