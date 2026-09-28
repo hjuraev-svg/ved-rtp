@@ -254,6 +254,9 @@ class DealBase(BaseModel):
     transport_mode: str = ""
     freight_cost_plan: Decimal | None = None
     freight_cost_fact: Decimal | None = None
+    customs_duty: Decimal | None = None
+    broker_fee: Decimal | None = None
+    other_costs: Decimal | None = None
     etd: date | None = None
     eta: date | None = None
     eta_initial: date | None = None
@@ -305,6 +308,9 @@ class DealUpdate(BaseModel):
     transport_mode: str | None = None
     freight_cost_plan: Decimal | None = None
     freight_cost_fact: Decimal | None = None
+    customs_duty: Decimal | None = None
+    broker_fee: Decimal | None = None
+    other_costs: Decimal | None = None
     etd: date | None = None
     eta: date | None = None
     eta_initial: date | None = None

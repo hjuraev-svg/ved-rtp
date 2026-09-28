@@ -805,6 +805,67 @@ async def delete_item(
     await hub.broadcast("item.deleted", {"deal_id": deal_id})
 
 
+@router.get("/{deal_id}/landed-cost")
+async def landed_cost(deal_id: int, db: AsyncSession = Depends(get_db), _: User = Depends(current_user)):
+    """Во что поставка обходится на складе, а не по инвойсу.
+
+    Накладные расходы разносятся по строкам пропорционально их стоимости —
+    самый распространённый способ. По весу было бы точнее для фрахта, но веса
+    в строках нет, а молча смешивать две базы распределения хуже, чем честно
+    держать одну.
+    """
+    deal = await _get_deal(db, deal_id)
+    items = (
+        await db.execute(
+            select(DealItem).where(DealItem.deal_id == deal_id).order_by(DealItem.order_no, DealItem.id)
+        )
+    ).unique().scalars().all()
+
+    goods = sum((i.amount or Decimal(0)) for i in items)
+    extras = {
+        "freight": deal.freight_cost_fact or deal.freight_cost_plan,
+        "customs_duty": deal.customs_duty,
+        "broker_fee": deal.broker_fee,
+        "other_costs": deal.other_costs,
+    }
+    overhead = sum((v or Decimal(0)) for v in extras.values())
+    total = goods + overhead
+
+    rows = []
+    for i in items:
+        amount = i.amount or Decimal(0)
+        share = (amount / goods) if goods else Decimal(0)
+        landed = amount + overhead * share
+        per_unit = (landed / i.qty) if i.qty else None
+        rows.append(
+            {
+                "item_id": i.id,
+                "name": i.name,
+                "unit": i.unit,
+                "qty": i.qty,
+                "unit_price": i.unit_price,
+                "amount": amount,
+                "landed_amount": landed.quantize(Decimal("0.01")),
+                "landed_unit_price": per_unit.quantize(Decimal("0.0001")) if per_unit is not None else None,
+                # Насколько строка дороже инвойсной цены, в процентах
+                "markup_pct": round(float(overhead * share / amount * 100), 1) if amount else None,
+            }
+        )
+
+    return {
+        "deal_id": deal_id,
+        "currency": deal.currency or "USD",
+        "goods": goods,
+        "extras": extras,
+        "overhead": overhead,
+        "total": total,
+        "overhead_pct": round(float(overhead / goods * 100), 1) if goods else None,
+        "items": rows,
+        # Без строк разносить не на что: показываем только общую сумму.
+        "has_items": bool(items),
+    }
+
+
 # --------------------------------------------------------------------------
 # платежи
 # --------------------------------------------------------------------------

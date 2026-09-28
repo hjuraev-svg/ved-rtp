@@ -169,6 +169,13 @@ class Deal(Base):
     eta: Mapped[date | None] = mapped_column(Date, nullable=True)
     eta_initial: Mapped[date | None] = mapped_column(Date, nullable=True)
 
+    # --- Себестоимость поставки: что добавляется к цене товара ---
+    # Пошлина и сбор, услуги брокера, прочее (СВХ, экспертиза, погрузка).
+    # Фрахт уже есть выше — freight_cost_fact.
+    customs_duty: Mapped[float | None] = mapped_column(Numeric(16, 2), nullable=True)
+    broker_fee: Mapped[float | None] = mapped_column(Numeric(16, 2), nullable=True)
+    other_costs: Mapped[float | None] = mapped_column(Numeric(16, 2), nullable=True)
+
     # --- Блок 14-15: брокер и ГТД ---
     broker_docs_sent_at: Mapped[date | None] = mapped_column(Date, nullable=True)
     gtd_number: Mapped[str] = mapped_column(String(80), default="")

@@ -36,6 +36,10 @@ STATEMENTS = [
     "CREATE INDEX IF NOT EXISTS ix_products_kind ON products (kind)",
     # 2026-09: срок действия у документа сделки (сертификаты, заключения).
     "ALTER TABLE deal_documents ADD COLUMN IF NOT EXISTS valid_until DATE",
+    # 2026-09: себестоимость поставки — пошлина, брокер, прочие расходы.
+    "ALTER TABLE deals ADD COLUMN IF NOT EXISTS customs_duty NUMERIC(16,2)",
+    "ALTER TABLE deals ADD COLUMN IF NOT EXISTS broker_fee NUMERIC(16,2)",
+    "ALTER TABLE deals ADD COLUMN IF NOT EXISTS other_costs NUMERIC(16,2)",
 ]
 
 
