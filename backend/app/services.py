@@ -18,6 +18,7 @@ from .models import (
     DealChecklist,
     DealDocument,
     DocType,
+    Payment,
     Stage,
     StageEvent,
 )
@@ -60,15 +61,24 @@ def production_slip_days(deal: Deal) -> int | None:
     return (reference - deal.production_ready_plan).days
 
 
-def is_overdue(deal: Deal, sla_days: int | None) -> bool:
+def is_overdue(deal: Deal, sla_days: int | None, overdue_revenue: bool = False) -> bool:
     """Red zone.
 
     The special rules below come from «Описание блоков» and only describe the
     import pipeline; «Местный поставщик» and «Услуга» fall back to plain
     time-in-stage against their own sla_days.
+
+    Export is judged on money, not on time in stage: a deal waiting for export
+    proceeds is red as soon as an incoming payment is past its due date, because
+    the repatriation deadline is set by law rather than by our own norms.
     """
     if deal.status not in OPEN_STATUSES:
         return False
+
+    if deal.pipeline == "export":
+        if deal.stage_id == 307 and overdue_revenue:
+            return True
+        return sla_days is not None and days_since(deal.stage_entered_at) > sla_days
 
     if deal.pipeline != "import":
         return sla_days is not None and days_since(deal.stage_entered_at) > sla_days
@@ -233,15 +243,30 @@ async def build_dashboard(db: AsyncSession, pipeline: str = DEFAULT_PIPELINE) ->
         ).all()
     )
 
+    # Сделки с просроченным входящим платежом — основание красной зоны для
+    # экспорта: срок репатриации выручки задан законом, а не нашим нормативом.
+    late_revenue: set[int] = set(
+        (
+            await db.execute(
+                select(Payment.deal_id).where(
+                    Payment.status == "planned",
+                    Payment.direction == "in",
+                    Payment.due_date.is_not(None),
+                    Payment.due_date < today,
+                )
+            )
+        ).scalars().all()
+    )
+
     tiles = []
     alerts: list[dict] = []
     for stage in stages:
         deals = per_stage.get(stage.id, [])
         overdue = 0
         for d in deals:
-            if is_overdue(d, stage.sla_days):
+            if is_overdue(d, stage.sla_days, d.id in late_revenue):
                 overdue += 1
-                alerts.append(_alert_for(d, stage))
+                alerts.append(_alert_for(d, stage, d.id in late_revenue))
         avg_days = round(sum(days_since(d.stage_entered_at) for d in deals) / len(deals), 1) if deals else 0.0
         group = GROUP_BY_KEY.get(stage.group_key, {"name": stage.group_name})
         tiles.append(
@@ -376,10 +401,13 @@ async def build_dashboard(db: AsyncSession, pipeline: str = DEFAULT_PIPELINE) ->
     }
 
 
-def _alert_for(deal: Deal, stage: Stage) -> dict:
+def _alert_for(deal: Deal, stage: Stage, overdue_revenue: bool = False) -> dict:
     kind, detail = "sla", f"Без движения {days_since(deal.stage_entered_at):.0f} дн. при норме {stage.sla_days} дн."
 
-    if stage.id == 12:
+    if stage.id == 307 and overdue_revenue:
+        kind = "revenue_overdue"
+        detail = "Срок поступления валютной выручки прошёл — риск нарушения репатриации"
+    elif stage.id == 12:
         slip = eta_slip_days(deal)
         if deal.eta and not deal.actual_arrival and date.today() > deal.eta:
             kind = "eta_overdue"
