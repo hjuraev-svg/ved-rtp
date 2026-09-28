@@ -6,9 +6,12 @@ import type {
   Comment,
   CommunicationMessage,
   Deal,
+  DealItem,
   DocumentItem,
   ChecklistItem,
   HistoryEvent,
+  Payment,
+  Product,
   Quote,
   Stage,
   Supplier,
@@ -30,7 +33,16 @@ import {
   fmtMoney,
 } from '../util'
 
-type Tab = 'overview' | 'checklist' | 'docs' | 'quotes' | 'claims' | 'messages' | 'history'
+type Tab =
+  | 'overview'
+  | 'items'
+  | 'payments'
+  | 'checklist'
+  | 'docs'
+  | 'quotes'
+  | 'claims'
+  | 'messages'
+  | 'history'
 
 export default function DealDetail({
   dealId,
@@ -139,6 +151,8 @@ export default function DealDetail({
             [
               ['overview', 'Карточка'],
               ['checklist', 'Чек-лист'],
+              ['items', 'Позиции'],
+              ['payments', 'Платежи'],
               ['docs', 'Документы'],
               ['quotes', 'КП'],
               ['claims', 'Претензии'],
@@ -159,6 +173,8 @@ export default function DealDetail({
 
       {tab === 'overview' && <Overview deal={deal} onSaved={reload} />}
       {tab === 'checklist' && <Checklist dealId={dealId} currentStage={deal.stage_id} />}
+      {tab === 'items' && <Items dealId={dealId} deal={deal} onChanged={reload} />}
+      {tab === 'payments' && <Payments dealId={dealId} deal={deal} />}
       {tab === 'docs' && <Documents dealId={dealId} />}
       {tab === 'quotes' && <Quotes dealId={dealId} onChanged={reload} />}
       {tab === 'claims' && <Claims dealId={dealId} />}
@@ -173,6 +189,376 @@ export default function DealDetail({
         />
       )}
     </>
+  )
+}
+
+// ---------------------------------------------------------------- позиции
+const BLANK_ITEM = { product_id: null as number | null, name: '', unit: '', qty: '', unit_price: '', note: '' }
+
+function Items({ dealId, deal, onChanged }: { dealId: number; deal: Deal; onChanged: () => void }) {
+  const { canEdit } = useAuth()
+  const { notify } = useToast()
+  const { data, loading, error, reload } = useLiveData<DealItem[]>(
+    () => api.get(`/api/deals/${dealId}/items`), [dealId], (e) => e.startsWith('item'),
+  )
+  const { data: products } = useLiveData<Product[]>(() => api.get('/api/products'), [], (e) => e.startsWith('product'))
+  const [form, setForm] = useState({ ...BLANK_ITEM })
+  const [editingId, setEditingId] = useState<number | null>(null)
+  const [busy, setBusy] = useState(false)
+
+  const total = useMemo(
+    () => (data ?? []).reduce((sum, i) => sum + Number(i.amount ?? 0), 0),
+    [data],
+  )
+
+  function pickProduct(id: string) {
+    const p = (products ?? []).find((x) => String(x.id) === id)
+    setForm((f) => ({
+      ...f,
+      product_id: p ? p.id : null,
+      name: p ? p.name : f.name,
+      unit: p ? p.unit || f.unit : f.unit,
+    }))
+  }
+
+  async function save() {
+    if (!form.name.trim() && form.product_id === null) return notify('Выберите позицию или впишите наименование', 'err')
+    setBusy(true)
+    try {
+      const body = {
+        product_id: form.product_id,
+        name: form.name.trim(),
+        unit: form.unit,
+        qty: form.qty === '' ? null : Number(form.qty),
+        unit_price: form.unit_price === '' ? null : Number(form.unit_price),
+        note: form.note,
+      }
+      if (editingId) await api.patch(`/api/deals/${dealId}/items/${editingId}`, body)
+      else await api.post(`/api/deals/${dealId}/items`, body)
+      setForm({ ...BLANK_ITEM })
+      setEditingId(null)
+      reload()
+      onChanged() // сумма контракта пересчитана на сервере — обновляем шапку
+    } catch (e: any) {
+      notify(e?.message ?? 'Не удалось сохранить', 'err')
+    } finally { setBusy(false) }
+  }
+
+  async function remove(item: DealItem) {
+    try {
+      await api.del(`/api/deals/${dealId}/items/${item.id}`)
+      reload(); onChanged()
+    } catch (e: any) { notify(e?.message ?? 'Не удалось удалить', 'err') }
+  }
+
+  if (loading && !data) return <Loading />
+  if (error) return <ErrorBox message={error} />
+
+  return (
+    <div style={{ display: 'grid', gap: 16 }}>
+      {canEdit && (
+        <Panel title={editingId ? 'Изменить строку' : 'Добавить позицию'}>
+          <div className="grid-2">
+            <Field label="Из номенклатуры">
+              <select className="select" value={form.product_id ?? ''} onChange={(e) => pickProduct(e.target.value)}>
+                <option value="">— вписать вручную —</option>
+                {(products ?? []).map((p) => (
+                  <option key={p.id} value={String(p.id)}>
+                    {p.code ? `${p.code} · ` : ''}{p.name}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Наименование">
+              <input className="input" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+            </Field>
+          </div>
+          <div className="grid-2">
+            <Field label="Количество">
+              <input className="input" type="number" step="0.001" value={form.qty}
+                onChange={(e) => setForm({ ...form, qty: e.target.value })} />
+            </Field>
+            <Field label="Единица">
+              <input className="input" value={form.unit} placeholder="кг"
+                onChange={(e) => setForm({ ...form, unit: e.target.value })} />
+            </Field>
+          </div>
+          <div className="grid-2">
+            <Field label={`Цена за единицу, ${deal.currency || 'USD'}`}>
+              <input className="input" type="number" step="0.0001" value={form.unit_price}
+                onChange={(e) => setForm({ ...form, unit_price: e.target.value })} />
+            </Field>
+            <Field label="Примечание">
+              <input className="input" value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} />
+            </Field>
+          </div>
+          <div className="row" style={{ justifyContent: 'flex-end', marginTop: 12, gap: 8 }}>
+            {editingId && (
+              <button className="btn" onClick={() => { setEditingId(null); setForm({ ...BLANK_ITEM }) }}>
+                Отмена
+              </button>
+            )}
+            <button className="btn primary" disabled={busy} onClick={save}>
+              {busy ? 'Сохранение…' : editingId ? 'Сохранить' : 'Добавить'}
+            </button>
+          </div>
+        </Panel>
+      )}
+
+      <Panel title="Состав поставки">
+        {!data?.length ? (
+          <Empty text="Позиции не заведены. Пока их нет, сумма контракта вводится вручную." />
+        ) : (
+          <>
+            <div className="table-wrap">
+              <table className="data">
+                <thead>
+                  <tr>
+                    <th>Наименование</th>
+                    <th className="num">Кол-во</th>
+                    <th>Ед.</th>
+                    <th className="num">Цена</th>
+                    <th className="num">Сумма</th>
+                    {canEdit && <th />}
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.map((i) => (
+                    <tr key={i.id}>
+                      <td>
+                        <b style={{ fontWeight: 550 }}>{i.name}</b>
+                        {i.product?.code && <div className="small faint mono">{i.product.code}</div>}
+                        {i.note && <div className="small faint">{i.note}</div>}
+                      </td>
+                      <td className="num nowrap">{i.qty ?? '—'}</td>
+                      <td className="faint">{i.unit || '—'}</td>
+                      <td className="num nowrap">{i.unit_price ?? '—'}</td>
+                      <td className="num nowrap"><b>{fmtMoney(i.amount, deal.currency)}</b></td>
+                      {canEdit && (
+                        <td className="nowrap">
+                          <button className="btn sm" onClick={() => {
+                            setEditingId(i.id)
+                            setForm({
+                              product_id: i.product_id, name: i.name, unit: i.unit,
+                              qty: i.qty ?? '', unit_price: i.unit_price ?? '', note: i.note,
+                            })
+                          }}>Изменить</button>
+                          <button className="btn sm danger" onClick={() => remove(i)}>Удалить</button>
+                        </td>
+                      )}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="row" style={{ justifyContent: 'flex-end', marginTop: 12, gap: 10 }}>
+              <span className="small faint">Итого по строкам — это и есть сумма контракта:</span>
+              <b style={{ fontSize: 17 }}>{fmtMoney(String(total), deal.currency)}</b>
+            </div>
+          </>
+        )}
+      </Panel>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------- платежи
+const KIND_LABELS: Record<string, string> = {
+  prepayment: 'Предоплата',
+  balance: 'Доплата',
+  final: 'Окончательный расчёт',
+  refund: 'Возврат',
+  other: 'Прочее',
+}
+const BLANK_PAYMENT = {
+  direction: 'out', status: 'planned', kind: 'prepayment',
+  amount: '', currency: '', rate: '', due_date: '', paid_at: '', doc_number: '', note: '',
+}
+
+function Payments({ dealId, deal }: { dealId: number; deal: Deal }) {
+  const { canEdit } = useAuth()
+  const { notify } = useToast()
+  const { data, loading, error, reload } = useLiveData<Payment[]>(
+    () => api.get(`/api/deals/${dealId}/payments`), [dealId], (e) => e.startsWith('payment'),
+  )
+  const [form, setForm] = useState({ ...BLANK_PAYMENT, currency: deal.currency || 'USD' })
+  const [editingId, setEditingId] = useState<number | null>(null)
+  const [busy, setBusy] = useState(false)
+
+  const sums = useMemo(() => {
+    const rows = data ?? []
+    const n = (list: Payment[]) => list.reduce((s, p) => s + Number(p.amount ?? 0), 0)
+    const paid = n(rows.filter((p) => p.status === 'paid' && p.direction === 'out'))
+    const planned = n(rows.filter((p) => p.status === 'planned' && p.direction === 'out'))
+    const contract = Number(deal.contract_amount ?? 0)
+    return { paid, planned, rest: contract ? contract - paid : planned }
+  }, [data, deal.contract_amount])
+
+  async function save() {
+    if (!form.amount) return notify('Укажите сумму', 'err')
+    if (form.status === 'paid' && !form.paid_at) return notify('У оплаченного платежа нужна дата оплаты', 'err')
+    setBusy(true)
+    try {
+      const body = {
+        direction: form.direction, status: form.status, kind: form.kind,
+        amount: Number(form.amount), currency: form.currency || 'USD',
+        rate: form.rate === '' ? null : Number(form.rate),
+        due_date: form.due_date || null, paid_at: form.paid_at || null,
+        doc_number: form.doc_number, note: form.note,
+      }
+      if (editingId) await api.patch(`/api/deals/${dealId}/payments/${editingId}`, body)
+      else await api.post(`/api/deals/${dealId}/payments`, body)
+      setForm({ ...BLANK_PAYMENT, currency: deal.currency || 'USD' })
+      setEditingId(null)
+      reload()
+    } catch (e: any) {
+      notify(e?.message ?? 'Не удалось сохранить', 'err')
+    } finally { setBusy(false) }
+  }
+
+  async function remove(p: Payment) {
+    try { await api.del(`/api/deals/${dealId}/payments/${p.id}`); reload() }
+    catch (e: any) { notify(e?.message ?? 'Не удалось удалить', 'err') }
+  }
+
+  if (loading && !data) return <Loading />
+  if (error) return <ErrorBox message={error} />
+  const today = new Date().toISOString().slice(0, 10)
+
+  return (
+    <div style={{ display: 'grid', gap: 16 }}>
+      <Panel title="Расчёты по сделке">
+        <div className="kv">
+          <Field label="Сумма контракта">
+            <b>{fmtMoney(deal.contract_amount, deal.currency)}</b>
+          </Field>
+          <Field label="Оплачено">
+            <b>{fmtMoney(String(sums.paid), deal.currency)}</b>
+          </Field>
+          <Field label="Осталось">
+            <b style={{ color: sums.rest > 0 ? 'var(--red)' : 'var(--green)' }}>
+              {fmtMoney(String(sums.rest), deal.currency)}
+            </b>
+          </Field>
+        </div>
+      </Panel>
+
+      {canEdit && (
+        <Panel title={editingId ? 'Изменить платёж' : 'Добавить платёж'}>
+          <div className="grid-2">
+            <Field label="Направление">
+              <select className="select" value={form.direction} onChange={(e) => setForm({ ...form, direction: e.target.value })}>
+                <option value="out">Платим мы</option>
+                <option value="in">Платят нам (выручка)</option>
+              </select>
+            </Field>
+            <Field label="Вид">
+              <select className="select" value={form.kind} onChange={(e) => setForm({ ...form, kind: e.target.value })}>
+                {Object.entries(KIND_LABELS).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+              </select>
+            </Field>
+          </div>
+          <div className="grid-2">
+            <Field label="Статус">
+              <select className="select" value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}>
+                <option value="planned">План — ещё не оплачен</option>
+                <option value="paid">Факт — оплачен</option>
+              </select>
+            </Field>
+            <Field label="Сумма">
+              <input className="input" type="number" step="0.01" value={form.amount}
+                onChange={(e) => setForm({ ...form, amount: e.target.value })} />
+            </Field>
+          </div>
+          <div className="grid-2">
+            <Field label="Валюта">
+              <input className="input" value={form.currency} onChange={(e) => setForm({ ...form, currency: e.target.value })} />
+            </Field>
+            <Field label={form.status === 'paid' ? 'Дата оплаты' : 'Срок оплаты'}>
+              <input className="input" type="date"
+                value={form.status === 'paid' ? form.paid_at : form.due_date}
+                onChange={(e) => setForm(form.status === 'paid'
+                  ? { ...form, paid_at: e.target.value }
+                  : { ...form, due_date: e.target.value })} />
+            </Field>
+          </div>
+          <div className="grid-2">
+            <Field label="Курс к суму (необязательно)">
+              <input className="input" type="number" step="0.0001" value={form.rate}
+                onChange={(e) => setForm({ ...form, rate: e.target.value })} />
+            </Field>
+            <Field label="Документ / swift">
+              <input className="input" value={form.doc_number}
+                onChange={(e) => setForm({ ...form, doc_number: e.target.value })} />
+            </Field>
+          </div>
+          <div className="row" style={{ justifyContent: 'flex-end', marginTop: 12, gap: 8 }}>
+            {editingId && (
+              <button className="btn" onClick={() => {
+                setEditingId(null); setForm({ ...BLANK_PAYMENT, currency: deal.currency || 'USD' })
+              }}>Отмена</button>
+            )}
+            <button className="btn primary" disabled={busy} onClick={save}>
+              {busy ? 'Сохранение…' : editingId ? 'Сохранить' : 'Добавить'}
+            </button>
+          </div>
+        </Panel>
+      )}
+
+      <Panel title="График и история">
+        {!data?.length ? <Empty text="Платежей пока нет." /> : (
+          <div className="table-wrap">
+            <table className="data">
+              <thead>
+                <tr>
+                  <th>Вид</th>
+                  <th>Статус</th>
+                  <th className="num">Сумма</th>
+                  <th>Дата</th>
+                  <th>Документ</th>
+                  {canEdit && <th />}
+                </tr>
+              </thead>
+              <tbody>
+                {data.map((p) => {
+                  const overdue = p.status === 'planned' && p.due_date && p.due_date < today
+                  return (
+                    <tr key={p.id}>
+                      <td className="nowrap">
+                        {KIND_LABELS[p.kind] ?? p.kind}
+                        {p.direction === 'in' && <span className="badge blue" style={{ marginLeft: 6 }}>входящий</span>}
+                      </td>
+                      <td>
+                        <span className={`badge ${p.status === 'paid' ? 'green' : overdue ? 'red' : ''}`}>
+                          {p.status === 'paid' ? 'Оплачен' : overdue ? 'Просрочен' : 'План'}
+                        </span>
+                      </td>
+                      <td className="num nowrap"><b>{fmtMoney(p.amount, p.currency)}</b></td>
+                      <td className="nowrap">{fmtDate(p.status === 'paid' ? p.paid_at : p.due_date)}</td>
+                      <td className="small faint">{p.doc_number || '—'}</td>
+                      {canEdit && (
+                        <td className="nowrap">
+                          <button className="btn sm" onClick={() => {
+                            setEditingId(p.id)
+                            setForm({
+                              direction: p.direction, status: p.status, kind: p.kind,
+                              amount: p.amount ?? '', currency: p.currency, rate: p.rate ?? '',
+                              due_date: p.due_date ?? '', paid_at: p.paid_at ?? '',
+                              doc_number: p.doc_number, note: p.note,
+                            })
+                          }}>Изменить</button>
+                          <button className="btn sm danger" onClick={() => remove(p)}>Удалить</button>
+                        </td>
+                      )}
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Panel>
+    </div>
   )
 }
 

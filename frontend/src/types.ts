@@ -56,6 +56,80 @@ export interface Product {
   is_active: boolean
 }
 
+export interface DealItem {
+  id: number
+  deal_id: number
+  product_id: number | null
+  product: Product | null
+  name: string
+  unit: string
+  qty: string | null
+  unit_price: string | null
+  amount: string | null
+  note: string
+  order_no: number
+}
+
+export interface Payment {
+  id: number
+  deal_id: number
+  /** out — платим мы, in — платят нам */
+  direction: 'out' | 'in'
+  status: 'planned' | 'paid'
+  kind: string
+  amount: string | null
+  currency: string
+  rate: string | null
+  due_date: string | null
+  paid_at: string | null
+  doc_number: string
+  note: string
+}
+
+export interface Money {
+  currency: string
+  amount: string
+}
+
+export interface FinanceDebt {
+  deal_id: number
+  code: string
+  title: string
+  supplier: string
+  currency: string
+  contract_amount: string
+  paid: string
+  rest: string
+}
+
+export interface FinanceScheduleRow {
+  payment_id: number
+  deal_id: number
+  code: string
+  title: string
+  supplier: string
+  direction: 'out' | 'in'
+  kind: string
+  amount: string | null
+  currency: string
+  due_date: string | null
+  overdue: boolean
+}
+
+export interface Finance {
+  generated_at: string
+  pipeline: string | null
+  contracted: Money[]
+  paid_out: Money[]
+  planned_out: Money[]
+  paid_in: Money[]
+  planned_in: Money[]
+  debts: FinanceDebt[]
+  debt_count: number
+  schedule: FinanceScheduleRow[]
+  overdue_count: number
+}
+
 export interface Deal {
   id: number
   code: string

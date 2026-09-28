@@ -695,23 +695,20 @@ async def patch_claim(
 # позиции сделки
 # --------------------------------------------------------------------------
 async def _recalc_contract_amount(db: AsyncSession, deal: Deal) -> None:
-    """Сумма контракта = сумма строк, пока строки есть.
+    """Сумма контракта = сумма строк номенклатуры.
 
-    Если позиций нет, поле остаётся тем, что ввели руками: у части сделок
-    (услуги, старый архив) номенклатуры не будет никогда.
+    Вызывается только из операций над строками, поэтому применяется всегда,
+    в том числе когда удалили последнюю: иначе производная сумма пережила бы
+    свой источник и осталась в карточке цифрой из ниоткуда. У сделок без строк
+    (услуги, старый архив) поле остаётся тем, что ввели руками, — сюда просто
+    не заходим.
     """
     total = (
         await db.execute(
             select(func.sum(DealItem.amount)).where(DealItem.deal_id == deal.id)
         )
     ).scalar_one_or_none()
-    has_items = (
-        await db.execute(
-            select(func.count(DealItem.id)).where(DealItem.deal_id == deal.id)
-        )
-    ).scalar_one()
-    if has_items:
-        deal.contract_amount = total or 0
+    deal.contract_amount = total
 
 
 def _item_amount(payload: DealItemIn) -> Decimal | None:
