@@ -132,6 +132,58 @@ class ProductIn(BaseModel):
     is_active: bool = True
 
 
+class DealItemOut(ORMModel):
+    id: int
+    deal_id: int
+    product_id: int | None
+    product: ProductOut | None
+    name: str
+    unit: str
+    qty: Decimal | None
+    unit_price: Decimal | None
+    amount: Decimal | None
+    note: str
+    order_no: int
+
+
+class DealItemIn(BaseModel):
+    product_id: int | None = None
+    name: str = ""
+    unit: str = ""
+    qty: Decimal | None = None
+    unit_price: Decimal | None = None
+    note: str = ""
+    order_no: int = 0
+
+
+class PaymentOut(ORMModel):
+    id: int
+    deal_id: int
+    direction: str
+    status: str
+    kind: str
+    amount: Decimal | None
+    currency: str
+    rate: Decimal | None
+    due_date: date | None
+    paid_at: date | None
+    doc_number: str
+    note: str
+
+
+class PaymentIn(BaseModel):
+    direction: str = "out"
+    status: str = "planned"
+    kind: str = "prepayment"
+    amount: Decimal | None = None
+    currency: str = "USD"
+    rate: Decimal | None = None
+    due_date: date | None = None
+    paid_at: date | None = None
+    doc_number: str = ""
+    note: str = ""
+
+
 class SupplierIn(BaseModel):
     name: str
     country: str = ""

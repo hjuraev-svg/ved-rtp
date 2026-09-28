@@ -445,6 +445,33 @@ DOC_TYPES = [
     ("svc_payment", "Подтверждение оплаты", False, 5, "service"),
 ]
 
+# Данные, без которых этап бессмысленен: нельзя считать контракт подписанным
+# без его номера и суммы, а растаможку начатой — без номера ГТД. Проверяется
+# при переводе сделки ВПЕРЁД; назад и в архивные сделки не вмешивается, иначе
+# исправить старую запись стало бы невозможно.
+STAGE_REQUIREMENTS: dict[int, list[tuple[str, str]]] = {
+    6: [
+        ("contract_number", "Номер контракта"),
+        ("contract_date", "Дата контракта"),
+        ("contract_amount", "Сумма контракта"),
+    ],
+    7: [("unk_number", "Номер УНК")],
+    12: [("etd", "ETD — дата отправки"), ("eta", "ETA — дата прибытия")],
+    15: [("gtd_number", "Номер ГТД"), ("gtd_submitted_at", "Дата подачи ГТД")],
+    16: [("actual_arrival", "Фактическая дата прибытия")],
+}
+
+
+def missing_for_stage(deal, stage_id: int) -> list[str]:
+    """Человекочитаемые названия незаполненных полей для этапа."""
+    gaps = []
+    for field, label in STAGE_REQUIREMENTS.get(stage_id, []):
+        value = getattr(deal, field, None)
+        if value is None or value == "":
+            gaps.append(label)
+    return gaps
+
+
 TRANSPORT_MODES = {
     "sea": "Море",
     "road": "Авто",

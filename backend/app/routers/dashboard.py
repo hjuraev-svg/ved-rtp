@@ -1,15 +1,16 @@
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
+from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..db import get_db
-from ..models import Deal, Stage, StageEvent, User, UserDashboard
+from ..models import Deal, Payment, Stage, StageEvent, Supplier, User, UserDashboard
 from ..reference import DEFAULT_PIPELINE, PIPELINE_BY_CODE
 from ..schemas import DashboardOut, LayoutIn, LayoutOut
 from ..security import current_user
-from ..services import build_dashboard
+from ..services import OPEN_STATUSES, build_dashboard
 
 router = APIRouter(prefix="/api/dashboard", tags=["dashboard"])
 
@@ -164,6 +165,136 @@ async def throughput(
         week = (created_at.date() - timedelta(days=created_at.weekday())).isoformat()
         counts[week] = counts.get(week, 0) + 1
     return [{"week": week, "count": counts[week]} for week in sorted(counts)]
+
+
+@router.get("/finance")
+async def finance(
+    pipeline: str = "",
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(current_user),
+):
+    """Взаиморасчёты: законтрактовано, оплачено, остаток — и график платежей.
+
+    Считается по валютам раздельно и не приводится к одной: курс на дату есть
+    не у каждого платежа, а складывать доллары с юанями без него — выдумывать
+    цифру, которой никто не сможет доверять.
+    """
+    today = date.today()
+
+    deal_filter = [Deal.status.in_(OPEN_STATUSES)]
+    if pipeline:
+        deal_filter.append(Deal.pipeline == pipeline)
+
+    # --- законтрактовано по валютам ---
+    contracted = (
+        await db.execute(
+            select(Deal.currency, func.sum(Deal.contract_amount))
+            .where(*deal_filter, Deal.contract_amount.is_not(None))
+            .group_by(Deal.currency)
+        )
+    ).all()
+
+    # --- оплачено и запланировано по валютам и направлению ---
+    paid_rows = (
+        await db.execute(
+            select(Payment.currency, Payment.direction, Payment.status, func.sum(Payment.amount))
+            .join(Deal, Deal.id == Payment.deal_id)
+            .where(*deal_filter)
+            .group_by(Payment.currency, Payment.direction, Payment.status)
+        )
+    ).all()
+
+    def bucket(direction: str, status_: str) -> list[dict]:
+        return [
+            {"currency": c or "USD", "amount": total or Decimal(0)}
+            for c, d, s, total in paid_rows
+            if d == direction and s == status_ and total
+        ]
+
+    # --- долг по сделкам: контракт минус оплаченное ---
+    per_deal = (
+        await db.execute(
+            select(
+                Deal.id,
+                Deal.code,
+                Deal.title,
+                Deal.currency,
+                Deal.contract_amount,
+                Supplier.name,
+                func.coalesce(
+                    select(func.sum(Payment.amount))
+                    .where(Payment.deal_id == Deal.id, Payment.status == "paid", Payment.direction == "out")
+                    .correlate(Deal)
+                    .scalar_subquery(),
+                    0,
+                ),
+            )
+            .outerjoin(Supplier, Supplier.id == Deal.supplier_id)
+            .where(*deal_filter, Deal.contract_amount.is_not(None), Deal.contract_amount > 0)
+            .order_by(Deal.contract_amount.desc())
+        )
+    ).all()
+
+    debts = []
+    for did, code, title, cur, amount, supplier, paid in per_deal:
+        rest = (amount or Decimal(0)) - (paid or Decimal(0))
+        if rest <= 0:
+            continue
+        debts.append(
+            {
+                "deal_id": did,
+                "code": code,
+                "title": title,
+                "supplier": supplier or "—",
+                "currency": cur or "USD",
+                "contract_amount": amount,
+                "paid": paid or Decimal(0),
+                "rest": rest,
+            }
+        )
+
+    # --- график: плановые платежи, просроченные первыми ---
+    upcoming = (
+        await db.execute(
+            select(Payment, Deal.code, Deal.title, Supplier.name)
+            .join(Deal, Deal.id == Payment.deal_id)
+            .outerjoin(Supplier, Supplier.id == Deal.supplier_id)
+            .where(*deal_filter, Payment.status == "planned")
+            .order_by(Payment.due_date.nulls_last())
+            .limit(50)
+        )
+    ).all()
+
+    schedule = [
+        {
+            "payment_id": p.id,
+            "deal_id": p.deal_id,
+            "code": code,
+            "title": title,
+            "supplier": supplier or "—",
+            "direction": p.direction,
+            "kind": p.kind,
+            "amount": p.amount,
+            "currency": p.currency,
+            "due_date": p.due_date,
+            "overdue": bool(p.due_date and p.due_date < today),
+        }
+        for p, code, title, supplier in upcoming
+    ]
+
+    return {
+        "generated_at": datetime.now(timezone.utc),
+        "pipeline": pipeline or None,
+        "contracted": [{"currency": c or "USD", "amount": t or Decimal(0)} for c, t in contracted if t],
+        "paid_out": bucket("out", "paid"),
+        "planned_out": bucket("out", "planned"),
+        "paid_in": bucket("in", "paid"),
+        "planned_in": bucket("in", "planned"),
+        "debts": debts[:100],
+        "debt_count": len(debts),
+        "schedule": schedule,
+        "overdue_count": sum(1 for s in schedule if s["overdue"]),
+    }
 
 
 @router.get("/by-supplier")

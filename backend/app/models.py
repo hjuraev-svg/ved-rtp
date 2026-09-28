@@ -199,6 +199,62 @@ class Deal(Base):
     assignee: Mapped[User | None] = relationship(lazy="joined")
 
 
+class DealItem(Base):
+    """Строка номенклатуры в сделке: что именно и почём закупается.
+
+    Валюта не хранится: позиция считается в валюте сделки. Разные валюты
+    внутри одной поставки — редкость, а сумма по строкам с разными валютами
+    складывалась бы в бессмыслицу.
+    """
+
+    __tablename__ = "deal_items"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    deal_id: Mapped[int] = mapped_column(ForeignKey("deals.id", ondelete="CASCADE"), index=True)
+    # Позиция справочника. Пустая — если закупка разовая и в номенклатуру не заводится.
+    product_id: Mapped[int | None] = mapped_column(ForeignKey("products.id"), nullable=True, index=True)
+    # Наименование на момент сделки: в документах оно своё, и переименование
+    # позиции в справочнике не должно задним числом менять прошлые поставки.
+    name: Mapped[str] = mapped_column(String(300), default="")
+    unit: Mapped[str] = mapped_column(String(24), default="")
+    qty: Mapped[float | None] = mapped_column(Numeric(16, 3), nullable=True)
+    unit_price: Mapped[float | None] = mapped_column(Numeric(16, 4), nullable=True)
+    # qty × unit_price, пересчитывается при записи — чтобы не считать в каждом запросе.
+    amount: Mapped[float | None] = mapped_column(Numeric(16, 2), nullable=True)
+    note: Mapped[str] = mapped_column(Text, default="")
+    order_no: Mapped[int] = mapped_column(Integer, default=0)
+
+    product: Mapped["Product | None"] = relationship(lazy="joined")
+
+
+class Payment(Base):
+    """Платёж по сделке — плановый или фактический.
+
+    Плановые строки и есть график: «сколько должны и когда». Фактические
+    закрывают их по мере оплаты.
+    """
+
+    __tablename__ = "payments"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    deal_id: Mapped[int] = mapped_column(ForeignKey("deals.id", ondelete="CASCADE"), index=True)
+    # out — платим мы (импорт), in — платят нам (экспортная выручка).
+    direction: Mapped[str] = mapped_column(String(4), default="out", index=True)
+    # planned | paid
+    status: Mapped[str] = mapped_column(String(12), default="planned", index=True)
+    # prepayment | balance | final | refund | other
+    kind: Mapped[str] = mapped_column(String(16), default="prepayment")
+    amount: Mapped[float | None] = mapped_column(Numeric(16, 2), nullable=True)
+    currency: Mapped[str] = mapped_column(String(8), default="USD")
+    # Курс к суму на дату операции — для сведения разных валют в один отчёт.
+    rate: Mapped[float | None] = mapped_column(Numeric(16, 4), nullable=True)
+    due_date: Mapped[date | None] = mapped_column(Date, nullable=True, index=True)
+    paid_at: Mapped[date | None] = mapped_column(Date, nullable=True)
+    doc_number: Mapped[str] = mapped_column(String(80), default="")
+    note: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class StageEvent(Base):
     """Audit trail of stage transitions — feeds cycle-time metrics."""
 

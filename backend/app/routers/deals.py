@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, or_, select
@@ -12,7 +13,10 @@ from ..models import (
     Deal,
     DealChecklist,
     DealDocument,
+    DealItem,
     DocType,
+    Payment,
+    Product,
     Quote,
     Stage,
     StageEvent,
@@ -29,17 +33,21 @@ from ..schemas import (
     DealCreate,
     DealListOut,
     DealMove,
+    DealItemIn,
+    DealItemOut,
     DealOut,
     DealPipelineChange,
     DealUpdate,
     DocumentOut,
     DocumentPatch,
     EventOut,
+    PaymentIn,
+    PaymentOut,
     QuoteIn,
     QuoteOut,
     QuoteSelect,
 )
-from ..reference import PIPELINE_BY_CODE
+from ..reference import PIPELINE_BY_CODE, missing_for_stage
 from ..security import can_edit, current_user
 from ..services import (
     OPEN_STATUSES,
@@ -361,6 +369,16 @@ async def move_deal(
     if payload.stage_id == deal.stage_id:
         return await _out(db, deal)
 
+    # Проверяем только движение вперёд: возврат на предыдущий этап — это как раз
+    # то, чем исправляют ошибку, и требовать на нём полноту данных бессмысленно.
+    if payload.stage_id > deal.stage_id:
+        gaps = missing_for_stage(deal, payload.stage_id)
+        if gaps:
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
+                f"Для этапа «{target.name}» заполните: {', '.join(gaps)}",
+            )
+
     now = datetime.now(timezone.utc)
     db.add(
         StageEvent(
@@ -671,6 +689,198 @@ async def patch_claim(
     await db.refresh(claim)
     await hub.broadcast("claim.updated", {"deal_id": deal_id})
     return claim
+
+
+# --------------------------------------------------------------------------
+# позиции сделки
+# --------------------------------------------------------------------------
+async def _recalc_contract_amount(db: AsyncSession, deal: Deal) -> None:
+    """Сумма контракта = сумма строк, пока строки есть.
+
+    Если позиций нет, поле остаётся тем, что ввели руками: у части сделок
+    (услуги, старый архив) номенклатуры не будет никогда.
+    """
+    total = (
+        await db.execute(
+            select(func.sum(DealItem.amount)).where(DealItem.deal_id == deal.id)
+        )
+    ).scalar_one_or_none()
+    has_items = (
+        await db.execute(
+            select(func.count(DealItem.id)).where(DealItem.deal_id == deal.id)
+        )
+    ).scalar_one()
+    if has_items:
+        deal.contract_amount = total or 0
+
+
+def _item_amount(payload: DealItemIn) -> Decimal | None:
+    if payload.qty is None or payload.unit_price is None:
+        return None
+    return (payload.qty * payload.unit_price).quantize(Decimal("0.01"))
+
+
+@router.get("/{deal_id}/items", response_model=list[DealItemOut])
+async def get_items(deal_id: int, db: AsyncSession = Depends(get_db), _: User = Depends(current_user)):
+    rows = (
+        await db.execute(
+            select(DealItem).where(DealItem.deal_id == deal_id).order_by(DealItem.order_no, DealItem.id)
+        )
+    ).unique().scalars().all()
+    return rows
+
+
+@router.post("/{deal_id}/items", response_model=DealItemOut, status_code=201)
+async def add_item(
+    deal_id: int,
+    payload: DealItemIn,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(can_edit),
+):
+    deal = await _get_deal(db, deal_id)
+    name = payload.name.strip()
+    unit = payload.unit
+    if payload.product_id is not None:
+        product = await db.get(Product, payload.product_id)
+        if not product:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Позиция номенклатуры не найдена")
+        # Снимок на момент сделки: переименование в справочнике не меняет прошлое.
+        name = name or product.name
+        unit = unit or product.unit
+    if not name:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Укажите наименование или выберите позицию")
+
+    item = DealItem(
+        deal_id=deal.id,
+        product_id=payload.product_id,
+        name=name[:300],
+        unit=unit,
+        qty=payload.qty,
+        unit_price=payload.unit_price,
+        amount=_item_amount(payload),
+        note=payload.note,
+        order_no=payload.order_no,
+    )
+    db.add(item)
+    await db.flush()
+    await _recalc_contract_amount(db, deal)
+    await db.commit()
+    await db.refresh(item, attribute_names=["product"])
+    await hub.broadcast("item.created", {"deal_id": deal_id})
+    return item
+
+
+@router.patch("/{deal_id}/items/{item_id}", response_model=DealItemOut)
+async def patch_item(
+    deal_id: int,
+    item_id: int,
+    payload: DealItemIn,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(can_edit),
+):
+    item = await db.get(DealItem, item_id)
+    if not item or item.deal_id != deal_id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Строка не найдена")
+    deal = await _get_deal(db, deal_id)
+    for key, value in payload.model_dump().items():
+        setattr(item, key, value)
+    item.amount = _item_amount(payload)
+    await db.flush()
+    await _recalc_contract_amount(db, deal)
+    await db.commit()
+    await db.refresh(item, attribute_names=["product"])
+    await hub.broadcast("item.updated", {"deal_id": deal_id})
+    return item
+
+
+@router.delete("/{deal_id}/items/{item_id}", status_code=204)
+async def delete_item(
+    deal_id: int, item_id: int, db: AsyncSession = Depends(get_db), _: User = Depends(can_edit)
+):
+    item = await db.get(DealItem, item_id)
+    if not item or item.deal_id != deal_id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Строка не найдена")
+    deal = await _get_deal(db, deal_id)
+    await db.delete(item)
+    await db.flush()
+    await _recalc_contract_amount(db, deal)
+    await db.commit()
+    await hub.broadcast("item.deleted", {"deal_id": deal_id})
+
+
+# --------------------------------------------------------------------------
+# платежи
+# --------------------------------------------------------------------------
+@router.get("/{deal_id}/payments", response_model=list[PaymentOut])
+async def get_payments(deal_id: int, db: AsyncSession = Depends(get_db), _: User = Depends(current_user)):
+    rows = (
+        await db.execute(
+            select(Payment)
+            .where(Payment.deal_id == deal_id)
+            .order_by(Payment.due_date.nulls_last(), Payment.paid_at.nulls_last(), Payment.id)
+        )
+    ).scalars().all()
+    return rows
+
+
+def _check_payment(payload: PaymentIn) -> None:
+    if payload.direction not in ("out", "in"):
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Направление платежа: out или in")
+    if payload.status not in ("planned", "paid"):
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Статус платежа: planned или paid")
+    if payload.amount is None or payload.amount <= 0:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Укажите сумму платежа")
+    if payload.status == "paid" and payload.paid_at is None:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "У оплаченного платежа нужна дата оплаты")
+
+
+@router.post("/{deal_id}/payments", response_model=PaymentOut, status_code=201)
+async def add_payment(
+    deal_id: int,
+    payload: PaymentIn,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(can_edit),
+):
+    deal = await _get_deal(db, deal_id)
+    _check_payment(payload)
+    payment = Payment(deal_id=deal.id, **payload.model_dump())
+    db.add(payment)
+    await db.commit()
+    await db.refresh(payment)
+    await hub.broadcast("payment.created", {"deal_id": deal_id})
+    return payment
+
+
+@router.patch("/{deal_id}/payments/{payment_id}", response_model=PaymentOut)
+async def patch_payment(
+    deal_id: int,
+    payment_id: int,
+    payload: PaymentIn,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(can_edit),
+):
+    payment = await db.get(Payment, payment_id)
+    if not payment or payment.deal_id != deal_id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Платёж не найден")
+    _check_payment(payload)
+    for key, value in payload.model_dump().items():
+        setattr(payment, key, value)
+    await db.commit()
+    await db.refresh(payment)
+    await hub.broadcast("payment.updated", {"deal_id": deal_id})
+    return payment
+
+
+@router.delete("/{deal_id}/payments/{payment_id}", status_code=204)
+async def delete_payment(
+    deal_id: int, payment_id: int, db: AsyncSession = Depends(get_db), _: User = Depends(can_edit)
+):
+    payment = await db.get(Payment, payment_id)
+    if not payment or payment.deal_id != deal_id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Платёж не найден")
+    await db.delete(payment)
+    await db.commit()
+    await hub.broadcast("payment.deleted", {"deal_id": deal_id})
 
 
 @router.get("/{deal_id}/comments", response_model=list[CommentOut])
