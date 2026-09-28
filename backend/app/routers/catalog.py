@@ -3,10 +3,14 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..db import get_db
-from ..models import ChecklistTemplate, DocType, Product, Stage, Supplier, User
+from datetime import date, timedelta
+
+from ..models import ChecklistTemplate, DocType, Permit, Product, Stage, Supplier, User
 from ..realtime import hub
 from ..reference import GROUPS, PIPELINES, TRANSPORT_MODES
 from ..schemas import (
+    PermitIn,
+    PermitOut,
     ProductIn,
     ProductOut,
     StageOut,
@@ -178,6 +182,85 @@ async def delete_product(
     await db.delete(product)
     await db.commit()
     await hub.broadcast("product.deleted", {"product_id": product_id})
+
+
+# ---------------- разрешительные документы ----------------
+def _with_days_left(permit: Permit) -> PermitOut:
+    out = PermitOut.model_validate(permit)
+    out.days_left = (permit.valid_until - date.today()).days if permit.valid_until else None
+    return out
+
+
+@router.get("/permits", response_model=list[PermitOut])
+async def list_permits(
+    include_inactive: bool = False,
+    expiring_days: int | None = None,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(current_user),
+):
+    """Реестр. `expiring_days` оставляет только истекающие в этот срок и уже просроченные."""
+    stmt = select(Permit).order_by(Permit.valid_until.nulls_last(), Permit.name)
+    if not include_inactive:
+        stmt = stmt.where(Permit.is_active.is_(True))
+    if expiring_days is not None:
+        stmt = stmt.where(
+            Permit.valid_until.is_not(None),
+            Permit.valid_until <= date.today() + timedelta(days=expiring_days),
+        )
+    rows = (await db.execute(stmt)).unique().scalars().all()
+    return [_with_days_left(p) for p in rows]
+
+
+@router.post("/permits", response_model=PermitOut, status_code=201)
+async def create_permit(
+    payload: PermitIn, db: AsyncSession = Depends(get_db), _: User = Depends(can_edit)
+):
+    if not payload.name.strip():
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Укажите наименование документа")
+    await _check_supplier(db, payload.supplier_id)
+    if payload.product_id is not None and not await db.get(Product, payload.product_id):
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Позиция номенклатуры не найдена")
+    permit = Permit(**payload.model_dump())
+    db.add(permit)
+    await db.commit()
+    await db.refresh(permit, attribute_names=["product", "supplier"])
+    await hub.broadcast("permit.created", {"permit_id": permit.id})
+    return _with_days_left(permit)
+
+
+@router.patch("/permits/{permit_id}", response_model=PermitOut)
+async def update_permit(
+    permit_id: int,
+    payload: PermitIn,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(can_edit),
+):
+    permit = await db.get(Permit, permit_id)
+    if not permit:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Документ не найден")
+    if not payload.name.strip():
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Укажите наименование документа")
+    await _check_supplier(db, payload.supplier_id)
+    if payload.product_id is not None and not await db.get(Product, payload.product_id):
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Позиция номенклатуры не найдена")
+    for key, value in payload.model_dump().items():
+        setattr(permit, key, value)
+    await db.commit()
+    await db.refresh(permit, attribute_names=["product", "supplier"])
+    await hub.broadcast("permit.updated", {"permit_id": permit_id})
+    return _with_days_left(permit)
+
+
+@router.delete("/permits/{permit_id}", status_code=204)
+async def delete_permit(
+    permit_id: int, db: AsyncSession = Depends(get_db), _: User = Depends(can_edit)
+):
+    permit = await db.get(Permit, permit_id)
+    if not permit:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Документ не найден")
+    await db.delete(permit)
+    await db.commit()
+    await hub.broadcast("permit.deleted", {"permit_id": permit_id})
 
 
 async def _check_supplier(db: AsyncSession, supplier_id: int | None) -> None:

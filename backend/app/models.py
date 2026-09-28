@@ -321,12 +321,46 @@ class DealDocument(Base):
     doc_type_id: Mapped[int] = mapped_column(ForeignKey("doc_types.id"))
     is_received: Mapped[bool] = mapped_column(Boolean, default=False)
     received_at: Mapped[date | None] = mapped_column(Date, nullable=True)
+    # Срок действия — у сертификатов и заключений он есть и на таможне проверяется.
+    valid_until: Mapped[date | None] = mapped_column(Date, nullable=True)
     number: Mapped[str] = mapped_column(String(120), default="")
     file_name: Mapped[str] = mapped_column(String(300), default="")
     file_path: Mapped[str] = mapped_column(String(400), default="")
     note: Mapped[str] = mapped_column(Text, default="")
 
     doc_type: Mapped[DocType] = relationship(lazy="joined")
+
+
+class Permit(Base):
+    """Разрешительный документ: рег. удостоверение, сертификат, заключение.
+
+    Привязан к продукции, а не к сделке: один сертификат обслуживает много
+    поставок, а его истечение останавливает партию на таможне независимо от
+    того, в какой сделке она едет.
+    """
+
+    __tablename__ = "permits"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    # Рег. удостоверение | Сертификат соответствия | Санитарное заключение | …
+    kind: Mapped[str] = mapped_column(String(80), default="", index=True)
+    name: Mapped[str] = mapped_column(String(300))
+    number: Mapped[str] = mapped_column(String(120), default="")
+    authority: Mapped[str] = mapped_column(String(200), default="")
+    issued_at: Mapped[date | None] = mapped_column(Date, nullable=True)
+    # Пустая дата = бессрочный документ, а не «забыли заполнить»: такие есть,
+    # и напоминание по ним слать не нужно.
+    valid_until: Mapped[date | None] = mapped_column(Date, nullable=True, index=True)
+    product_id: Mapped[int | None] = mapped_column(ForeignKey("products.id"), nullable=True, index=True)
+    supplier_id: Mapped[int | None] = mapped_column(ForeignKey("suppliers.id"), nullable=True, index=True)
+    file_name: Mapped[str] = mapped_column(String(300), default="")
+    file_path: Mapped[str] = mapped_column(String(400), default="")
+    note: Mapped[str] = mapped_column(Text, default="")
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    product: Mapped["Product | None"] = relationship(lazy="joined")
+    supplier: Mapped[Supplier | None] = relationship(lazy="joined")
 
 
 class Quote(Base):

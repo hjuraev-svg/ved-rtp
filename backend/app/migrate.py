@@ -34,6 +34,8 @@ STATEMENTS = [
     "ALTER TABLE products ADD COLUMN IF NOT EXISTS unit VARCHAR(24) NOT NULL DEFAULT ''",
     "ALTER TABLE products ADD COLUMN IF NOT EXISTS supplier_code VARCHAR(80) NOT NULL DEFAULT ''",
     "CREATE INDEX IF NOT EXISTS ix_products_kind ON products (kind)",
+    # 2026-09: срок действия у документа сделки (сертификаты, заключения).
+    "ALTER TABLE deal_documents ADD COLUMN IF NOT EXISTS valid_until DATE",
 ]
 
 

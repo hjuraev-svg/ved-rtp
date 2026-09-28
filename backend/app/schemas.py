@@ -184,6 +184,38 @@ class PaymentIn(BaseModel):
     note: str = ""
 
 
+class PermitOut(ORMModel):
+    id: int
+    kind: str
+    name: str
+    number: str
+    authority: str
+    issued_at: date | None
+    valid_until: date | None
+    product_id: int | None
+    product: ProductOut | None
+    supplier_id: int | None
+    supplier: SupplierOut | None
+    file_name: str
+    note: str
+    is_active: bool
+    # Сколько дней осталось; None у бессрочных. Отрицательное — просрочен.
+    days_left: int | None = None
+
+
+class PermitIn(BaseModel):
+    name: str
+    kind: str = ""
+    number: str = ""
+    authority: str = ""
+    issued_at: date | None = None
+    valid_until: date | None = None
+    product_id: int | None = None
+    supplier_id: int | None = None
+    note: str = ""
+    is_active: bool = True
+
+
 class SupplierIn(BaseModel):
     name: str
     country: str = ""
