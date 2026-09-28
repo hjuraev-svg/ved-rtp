@@ -6,7 +6,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..db import get_db
-from ..models import Deal, Payment, Stage, StageEvent, Supplier, User, UserDashboard
+from ..models import Claim, Deal, Payment, Stage, StageEvent, Supplier, User, UserDashboard
 from ..reference import DEFAULT_PIPELINE, PIPELINE_BY_CODE
 from ..schemas import DashboardOut, LayoutIn, LayoutOut
 from ..security import current_user
@@ -295,6 +295,102 @@ async def finance(
         "schedule": schedule,
         "overdue_count": sum(1 for s in schedule if s["overdue"]),
     }
+
+
+@router.get("/supplier-rating")
+async def supplier_rating(
+    min_deals: int = 2,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(current_user),
+):
+    """Рейтинг поставщиков на исполненных поставках.
+
+    Считается только по закрытым сделкам: у незавершённой нет ни срока
+    исполнения, ни итога, и включать её значит хвалить поставщика авансом.
+    Поставщики с одной-двумя поставками показываются, но помечаются — по
+    такой выборке делать выводы нельзя.
+    """
+    rows = (
+        await db.execute(
+            select(
+                Supplier.id,
+                Supplier.name,
+                Supplier.country,
+                Supplier.category,
+                Deal.created_at,
+                Deal.closed_at,
+                Deal.actual_arrival,
+                Deal.eta,
+                Deal.eta_initial,
+                Deal.production_ready_plan,
+                Deal.production_ready_fact,
+            )
+            .join(Deal, Deal.supplier_id == Supplier.id)
+            .where(Deal.status == "done")
+        )
+    ).all()
+
+    claims = dict(
+        (
+            await db.execute(
+                select(Deal.supplier_id, func.count(Claim.id))
+                .join(Claim, Claim.deal_id == Deal.id)
+                .where(Deal.supplier_id.is_not(None))
+                .group_by(Deal.supplier_id)
+            )
+        ).all()
+    )
+
+    agg: dict[int, dict] = {}
+    for sid, name, country, category, created, closed, arrival, eta, eta0, plan, fact in rows:
+        a = agg.setdefault(
+            sid,
+            {
+                "supplier_id": sid, "supplier": name, "country": country, "category": category,
+                "deals": 0, "cycle_days": [], "on_time": 0, "judged": 0, "slips": [],
+            },
+        )
+        a["deals"] += 1
+
+        # У сделок, загруженных из файлового архива, дата создания и закрытия
+        # совпадают: в папке была одна дата. Нулевой цикл здесь означает «срок
+        # неизвестен», а не «исполнено в тот же день», и в среднее не идёт —
+        # иначе рейтинг показывал бы уверенный ноль там, где данных нет.
+        if created and closed and (closed - created).days > 0:
+            a["cycle_days"].append((closed - created).days)
+
+        # В срок = приехал не позже обещанной ETA. Судим только там, где
+        # обе даты есть: иначе «в срок» превратилось бы в «нет данных».
+        if arrival and eta:
+            a["judged"] += 1
+            if arrival <= eta:
+                a["on_time"] += 1
+        if eta and eta0:
+            a["slips"].append((eta - eta0).days)
+        if plan and fact:
+            a["slips"].append((fact - plan).days)
+
+    out = []
+    for sid, a in agg.items():
+        cycles = a["cycle_days"]
+        slips = a["slips"]
+        out.append(
+            {
+                "supplier_id": sid,
+                "supplier": a["supplier"],
+                "country": a["country"] or "",
+                "category": a["category"] or "",
+                "deals": a["deals"],
+                "avg_cycle_days": round(sum(cycles) / len(cycles)) if cycles else None,
+                "on_time_pct": round(a["on_time"] / a["judged"] * 100) if a["judged"] else None,
+                "judged_deliveries": a["judged"],
+                "avg_slip_days": round(sum(slips) / len(slips)) if slips else None,
+                "claims": int(claims.get(sid, 0)),
+                "thin": a["deals"] < min_deals,
+            }
+        )
+    out.sort(key=lambda r: (-r["deals"], r["supplier"]))
+    return out
 
 
 @router.get("/by-supplier")
