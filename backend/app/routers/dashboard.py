@@ -297,6 +297,61 @@ async def finance(
     }
 
 
+@router.get("/unk-registry")
+async def unk_registry(
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(current_user),
+):
+    """Реестр УНК: цепочка контракт → УНК → платежи → поставка → закрытие.
+
+    Берутся только импорт и экспорт: у местных закупок и услуг перевозки
+    валютного контроля нет, и попадание их в реестр было бы шумом.
+    """
+    rows = (
+        await db.execute(
+            select(
+                Deal.id, Deal.code, Deal.title, Deal.pipeline, Deal.status, Deal.stage_id,
+                Deal.contract_number, Deal.contract_date, Deal.contract_amount, Deal.currency,
+                Deal.unk_number, Deal.unk_date, Supplier.name,
+                func.coalesce(
+                    select(func.sum(Payment.amount))
+                    .where(Payment.deal_id == Deal.id, Payment.status == "paid")
+                    .correlate(Deal)
+                    .scalar_subquery(),
+                    0,
+                ),
+            )
+            .outerjoin(Supplier, Supplier.id == Deal.supplier_id)
+            .where(Deal.pipeline.in_(("import", "export")), Deal.contract_number != "")
+            .order_by(Deal.contract_date.desc().nulls_last())
+        )
+    ).all()
+
+    registry = []
+    for (did, code, title, pipeline, status_, stage_id, cnum, cdate, camount, cur,
+         unk, unk_date, supplier, paid) in rows:
+        # Порог регистрации УНК привязан к этапу: до подписания контракта
+        # требовать его бессмысленно.
+        needs_unk = (pipeline == "import" and stage_id >= 6) or (pipeline == "export" and stage_id >= 302)
+        registry.append(
+            {
+                "deal_id": did, "code": code, "title": title, "pipeline": pipeline,
+                "status": status_, "supplier": supplier or "—",
+                "contract_number": cnum, "contract_date": cdate,
+                "contract_amount": camount, "currency": cur or "USD",
+                "unk_number": unk or "", "unk_date": unk_date,
+                "paid": paid or Decimal(0),
+                "missing_unk": bool(needs_unk and not unk),
+            }
+        )
+
+    return {
+        "total": len(registry),
+        "missing": sum(1 for r in registry if r["missing_unk"]),
+        "rows": registry,
+    }
+
+
 @router.get("/supplier-rating")
 async def supplier_rating(
     min_deals: int = 2,
