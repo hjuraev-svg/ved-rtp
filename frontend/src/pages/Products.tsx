@@ -1,8 +1,9 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { api } from '../api'
 import { useAuth, useLiveData, useToast } from '../store'
 import type { Product, Supplier } from '../types'
 import { Empty, Field, Loading, Modal } from '../components/ui'
+import { fmtDate } from '../util'
 
 type NewProduct = Omit<Product, 'id' | 'supplier'>
 
@@ -242,6 +243,69 @@ export default function Products() {
   )
 }
 
+interface PriceHistoryData {
+  purchases: number
+  summary: { currency: string; min: string; max: string; last: string; count: number }[]
+  history: { deal_id: number; code: string; date: string | null; supplier: string; unit_price: string; qty: string | null; unit: string; currency: string }[]
+}
+
+/** Чем позиция обходилась раньше. Цены не сводятся между валютами. */
+function PriceHistory({ productId }: { productId: number }) {
+  const [data, setData] = useState<PriceHistoryData | null>(null)
+  const [open, setOpen] = useState(false)
+
+  useEffect(() => {
+    api.get<PriceHistoryData>(`/api/products/${productId}/price-history`)
+      .then(setData)
+      .catch(() => setData(null))
+  }, [productId])
+
+  if (!data) return null
+  if (data.purchases === 0) {
+    return (
+      <div className="small faint" style={{ marginBottom: 12 }}>
+        Позиция ещё не закупалась — история цен появится, когда её добавят в состав сделки.
+      </div>
+    )
+  }
+
+  return (
+    <div style={{ marginBottom: 14, border: '1px solid var(--border)', borderRadius: 8, padding: 10 }}>
+      <div className="row" style={{ gap: 10, flexWrap: 'wrap' }}>
+        <b className="small">История цен · закупок: {data.purchases}</b>
+        <div style={{ flex: 1 }} />
+        <button className="btn sm" onClick={() => setOpen((v) => !v)}>
+          {open ? 'Свернуть' : 'Показать все'}
+        </button>
+      </div>
+      <div className="small" style={{ marginTop: 6 }}>
+        {data.summary.map((s) => (
+          <div key={s.currency}>
+            {s.currency}: от <b>{s.min}</b> до <b>{s.max}</b>, последняя <b>{s.last}</b>
+          </div>
+        ))}
+      </div>
+      {open && (
+        <div className="table-wrap" style={{ marginTop: 8, maxHeight: 200, overflowY: 'auto' }}>
+          <table className="data">
+            <thead><tr><th>Дата</th><th>Сделка</th><th>Поставщик</th><th className="num">Цена</th></tr></thead>
+            <tbody>
+              {data.history.map((h, i) => (
+                <tr key={i}>
+                  <td className="nowrap small">{fmtDate(h.date)}</td>
+                  <td className="mono small faint">{h.code}</td>
+                  <td className="small">{h.supplier}</td>
+                  <td className="num nowrap"><b>{h.unit_price}</b> <span className="faint">{h.currency}</span></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
 interface ImportResult {
   applied: boolean
   recognised_columns: string[]
@@ -398,6 +462,8 @@ function ProductForm({
         </div>
       }
     >
+      {'id' in product && !confirmDelete && <PriceHistory productId={product.id} />}
+
       {confirmDelete ? (
         <>
           <p style={{ marginTop: 0 }}>

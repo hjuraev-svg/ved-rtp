@@ -5,7 +5,17 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..db import get_db
-from ..models import ChecklistTemplate, DocType, Permit, Product, Stage, Supplier, User
+from ..models import (
+    ChecklistTemplate,
+    Deal,
+    DealItem,
+    DocType,
+    Permit,
+    Product,
+    Stage,
+    Supplier,
+    User,
+)
 from ..realtime import hub
 from ..reference import GROUPS, PIPELINES, TRANSPORT_MODES
 from ..schemas import (
@@ -182,6 +192,71 @@ async def delete_product(
     await db.delete(product)
     await db.commit()
     await hub.broadcast("product.deleted", {"product_id": product_id})
+
+
+@router.get("/products/{product_id}/price-history")
+async def product_price_history(
+    product_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(current_user),
+):
+    """Чем эта позиция обходилась раньше и у кого.
+
+    Цены не усредняются между валютами и не приводятся к одной: сравнивать
+    имеет смысл внутри валюты, а курс на дату поставки нам не известен.
+    """
+    if not await db.get(Product, product_id):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Позиция не найдена")
+
+    rows = (
+        await db.execute(
+            select(
+                DealItem.unit_price,
+                DealItem.qty,
+                DealItem.unit,
+                Deal.currency,
+                Deal.code,
+                Deal.id,
+                Deal.created_at,
+                Supplier.name,
+            )
+            .join(Deal, Deal.id == DealItem.deal_id)
+            .outerjoin(Supplier, Supplier.id == Deal.supplier_id)
+            .where(DealItem.product_id == product_id, DealItem.unit_price.is_not(None))
+            .order_by(Deal.created_at.desc())
+        )
+    ).all()
+
+    history = [
+        {
+            "deal_id": did,
+            "code": code,
+            "date": created.date() if created else None,
+            "supplier": supplier or "—",
+            "unit_price": price,
+            "qty": qty,
+            "unit": unit,
+            "currency": currency or "USD",
+        }
+        for price, qty, unit, currency, code, did, created, supplier in rows
+    ]
+
+    # Разброс считаем по каждой валюте отдельно.
+    by_currency: dict[str, list] = {}
+    for h in history:
+        by_currency.setdefault(h["currency"], []).append(h["unit_price"])
+    summary = [
+        {
+            "currency": cur,
+            "min": min(prices),
+            "max": max(prices),
+            "last": next(h["unit_price"] for h in history if h["currency"] == cur),
+            "count": len(prices),
+        }
+        for cur, prices in by_currency.items()
+    ]
+
+    return {"product_id": product_id, "purchases": len(history), "summary": summary, "history": history}
 
 
 # ---------------- разрешительные документы ----------------
