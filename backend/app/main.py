@@ -13,7 +13,7 @@ from .migrate import run as run_migrations
 from .models import *  # noqa: F401,F403  (registers all tables on Base.metadata)
 from .integrations import sync_gmail
 from .realtime import hub
-from .routers import auth, catalog, communications, dashboard, deals, export, files, ws
+from .routers import auth, catalog, communications, dashboard, deals, export, files, imports, ws
 from .seed import run_seed
 
 logging.basicConfig(
@@ -86,6 +86,7 @@ app.include_router(catalog.router)
 app.include_router(export.router)
 app.include_router(ws.router)
 app.include_router(communications.router)
+app.include_router(imports.router)
 
 
 @app.get("/api/health", tags=["system"])

@@ -36,6 +36,7 @@ export default function Products() {
   const [supplierId, setSupplierId] = useState('')
   const [kind, setKind] = useState('')
   const [q, setQ] = useState('')
+  const [importing, setImporting] = useState(false)
 
   const { data, reload } = useLiveData<Product[]>(
     () => api.get('/api/products?include_inactive=true'),
@@ -154,6 +155,11 @@ export default function Products() {
           {shown.length} из {data.length}
         </span>
         {canEdit && (
+          <button className="btn" onClick={() => setImporting(true)}>
+            ↑ Из Excel
+          </button>
+        )}
+        {canEdit && (
           <button className="btn primary" onClick={() => setEditing({ ...BLANK })}>
             + Продукция
           </button>
@@ -216,6 +222,13 @@ export default function Products() {
         </div>
       )}
 
+      {importing && (
+        <ImportProducts
+          onClose={() => setImporting(false)}
+          onDone={() => { setImporting(false); reload() }}
+        />
+      )}
+
       {editing && (
         <ProductForm
           product={editing}
@@ -226,6 +239,121 @@ export default function Products() {
         />
       )}
     </>
+  )
+}
+
+interface ImportResult {
+  applied: boolean
+  recognised_columns: string[]
+  total_rows: number
+  ready: number
+  skipped: number
+  preview: { code: string; name: string; kind: string; unit: string; supplier_name: string }[]
+  problems: { line: number; text: string; reason: string }[]
+}
+
+/** Вставка из Excel: сначала вхолостую с разбором, запись — отдельным шагом. */
+function ImportProducts({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
+  const { notify } = useToast()
+  const [text, setText] = useState('')
+  const [result, setResult] = useState<ImportResult | null>(null)
+  const [busy, setBusy] = useState(false)
+
+  async function run(apply: boolean) {
+    if (!text.trim()) return notify('Вставьте таблицу из Excel', 'err')
+    setBusy(true)
+    try {
+      const r = await api.post<ImportResult>('/api/import/products', { text, apply })
+      setResult(r)
+      if (apply) {
+        notify(`Загружено позиций: ${r.ready}`)
+        onDone()
+      }
+    } catch (e: any) {
+      notify(e?.message ?? 'Не удалось разобрать таблицу', 'err')
+    } finally { setBusy(false) }
+  }
+
+  return (
+    <Modal
+      title="Загрузка номенклатуры из Excel"
+      onClose={onClose}
+      footer={
+        <div className="row" style={{ justifyContent: 'flex-end' }}>
+          <button className="btn" onClick={onClose}>Закрыть</button>
+          <button className="btn" disabled={busy} onClick={() => run(false)}>
+            {busy ? 'Разбор…' : 'Проверить'}
+          </button>
+          <button
+            className="btn primary"
+            disabled={busy || !result || result.ready === 0}
+            onClick={() => run(true)}
+          >
+            {result ? `Загрузить ${result.ready}` : 'Загрузить'}
+          </button>
+        </div>
+      }
+    >
+      <p className="small" style={{ marginTop: 0 }}>
+        Выделите таблицу в Excel, скопируйте (Ctrl+C) и вставьте сюда. Первая строка — заголовки.
+        Распознаются: <b>Код · Наименование · Тип · Единица · Артикул поставщика · Поставщик · Назначение</b>.
+        Обязательно только наименование.
+      </p>
+      <textarea
+        className="textarea mono"
+        rows={9}
+        placeholder={'Код\tНаименование\tТип\tЕдиница\nJNS 101\tОтдушка лаванда\tСырьё\tкг'}
+        value={text}
+        onChange={(e) => { setText(e.target.value); setResult(null) }}
+      />
+
+      {result && (
+        <div style={{ marginTop: 14 }}>
+          <div className="row" style={{ gap: 10, flexWrap: 'wrap' }}>
+            <span className="badge green">К загрузке: {result.ready}</span>
+            {result.skipped > 0 && <span className="badge red">Пропущено: {result.skipped}</span>}
+            <span className="small faint">строк в таблице: {result.total_rows}</span>
+          </div>
+
+          {result.problems.length > 0 && (
+            <div style={{ marginTop: 10 }}>
+              <div className="small" style={{ marginBottom: 4 }}>Не будут загружены:</div>
+              <div className="small" style={{
+                maxHeight: 130, overflowY: 'auto',
+                border: '1px solid var(--border)', borderRadius: 8, padding: 8,
+              }}>
+                {result.problems.map((p) => (
+                  <div key={p.line} style={{ padding: '2px 0' }}>
+                    <span className="faint">строка {p.line}</span> · {p.text || '—'} — <b>{p.reason}</b>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {result.preview.length > 0 && (
+            <div className="table-wrap" style={{ marginTop: 10, maxHeight: 220, overflowY: 'auto' }}>
+              <table className="data">
+                <thead>
+                  <tr><th>Код</th><th>Наименование</th><th>Тип</th><th>Ед.</th><th>Поставщик</th></tr>
+                </thead>
+                <tbody>
+                  {result.preview.map((r, i) => (
+                    <tr key={i}>
+                      <td className="mono faint">{r.code || '—'}</td>
+                      <td>{r.name}</td>
+                      <td>{r.kind || '—'}</td>
+                      <td className="faint">{r.unit || '—'}</td>
+                      <td className="small">{r.supplier_name || '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+    </Modal>
   )
 }
 
