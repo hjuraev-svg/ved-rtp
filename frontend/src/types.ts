@@ -164,6 +164,9 @@ export interface Deal {
   transport_mode: string
   freight_cost_plan: string | null
   freight_cost_fact: string | null
+  customs_duty: string | null
+  broker_fee: string | null
+  other_costs: string | null
   etd: string | null
   eta: string | null
   eta_initial: string | null

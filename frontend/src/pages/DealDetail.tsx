@@ -358,7 +358,96 @@ function Items({ dealId, deal, onChanged }: { dealId: number; deal: Deal; onChan
           </>
         )}
       </Panel>
+
+      {!!data?.length && <LandedCost dealId={dealId} />}
     </div>
+  )
+}
+
+interface LandedCostData {
+  currency: string
+  goods: string
+  overhead: string
+  total: string
+  overhead_pct: number | null
+  extras: Record<string, string | null>
+  items: {
+    item_id: number; name: string; unit: string; qty: string | null
+    amount: string; landed_amount: string; landed_unit_price: string | null; markup_pct: number | null
+  }[]
+}
+
+const EXTRA_LABELS: Record<string, string> = {
+  freight: 'Фрахт',
+  customs_duty: 'Пошлина и сборы',
+  broker_fee: 'Брокер',
+  other_costs: 'Прочее',
+}
+
+/** Во что поставка обходится на складе, а не по инвойсу. */
+function LandedCost({ dealId }: { dealId: number }) {
+  const [data, setData] = useState<LandedCostData | null>(null)
+  const { data: items } = useLiveData<DealItem[]>(
+    () => api.get(`/api/deals/${dealId}/items`), [dealId], (e) => e.startsWith('item'),
+  )
+
+  useEffect(() => {
+    api.get<LandedCostData>(`/api/deals/${dealId}/landed-cost`).then(setData).catch(() => setData(null))
+  }, [dealId, items])
+
+  if (!data) return null
+  const hasOverhead = Number(data.overhead) > 0
+
+  return (
+    <Panel title="Себестоимость на складе">
+      {!hasOverhead ? (
+        <div className="small faint">
+          Накладные расходы не заполнены. Внесите фрахт, пошлину и услуги брокера во вкладке
+          «Обзор» — они разнесутся по строкам пропорционально стоимости.
+        </div>
+      ) : (
+        <>
+          <div className="row" style={{ gap: 14, flexWrap: 'wrap', marginBottom: 12 }}>
+            <span className="small">Товар: <b>{fmtMoney(data.goods, data.currency)}</b></span>
+            {Object.entries(data.extras).filter(([, v]) => v).map(([k, v]) => (
+              <span key={k} className="small faint">{EXTRA_LABELS[k] ?? k}: {fmtMoney(v!, data.currency)}</span>
+            ))}
+            <div style={{ flex: 1 }} />
+            <span className="badge amber">накладные +{data.overhead_pct}%</span>
+            <span className="small">Итого на складе: <b style={{ fontSize: 16 }}>{fmtMoney(data.total, data.currency)}</b></span>
+          </div>
+          <div className="table-wrap">
+            <table className="data">
+              <thead>
+                <tr>
+                  <th>Позиция</th>
+                  <th className="num">По инвойсу</th>
+                  <th className="num">На складе</th>
+                  <th className="num">Цена за ед.</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.items.map((r) => (
+                  <tr key={r.item_id}>
+                    <td>{r.name}</td>
+                    <td className="num nowrap faint">{fmtMoney(r.amount, data.currency)}</td>
+                    <td className="num nowrap"><b>{fmtMoney(r.landed_amount, data.currency)}</b></td>
+                    <td className="num nowrap">
+                      {r.landed_unit_price ?? '—'}
+                      {r.unit && <span className="faint"> /{r.unit}</span>}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="small faint" style={{ marginTop: 8 }}>
+            Накладные разносятся пропорционально стоимости строки. По весу было бы точнее для
+            фрахта, но веса в позициях нет.
+          </div>
+        </>
+      )}
+    </Panel>
   )
 }
 
@@ -908,6 +997,9 @@ function Overview({ deal, onSaved }: { deal: Deal; onSaved: () => void }) {
           </Field>
           {num('freight_cost_plan', 'Фрахт — план')}
           {num('freight_cost_fact', 'Фрахт — факт')}
+          {num('customs_duty', 'Пошлина и сборы')}
+          {num('broker_fee', 'Услуги брокера')}
+          {num('other_costs', 'Прочие расходы (СВХ, экспертиза)')}
           {date('etd', 'ETD (отправка)')}
           {date('eta', 'ETA (прибытие)')}
           {date('eta_initial', 'ETA первоначальная')}
