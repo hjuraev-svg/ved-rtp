@@ -355,3 +355,22 @@ export interface CommunicationMessage {
   received_at: string | null
   created_at: string
 }
+
+export interface Permit {
+  id: number
+  kind: string
+  name: string
+  number: string
+  authority: string
+  issued_at: string | null
+  valid_until: string | null
+  product_id: number | null
+  product: Product | null
+  supplier_id: number | null
+  supplier: Supplier | null
+  file_name: string
+  note: string
+  is_active: boolean
+  /** Дней до истечения; null у бессрочных, отрицательное — просрочен. */
+  days_left: number | null
+}

@@ -7,6 +7,7 @@ import DealDetail from './pages/DealDetail'
 import Suppliers from './pages/Suppliers'
 import Finance from './pages/Finance'
 import Products from './pages/Products'
+import Permits from './pages/Permits'
 import Blocks from './pages/Blocks'
 import Analytics from './pages/Analytics'
 import Users from './pages/Users'
@@ -20,6 +21,7 @@ const NAV: { path: string; label: string; icon: string; adminOnly?: boolean }[] 
   { path: 'finance', label: 'Финансы', icon: '₴' },
   { path: 'suppliers', label: 'Поставщики', icon: '⚑' },
   { path: 'products', label: 'Продукция', icon: '◈' },
+  { path: 'permits', label: 'Разрешительные', icon: '✔' },
   { path: 'blocks', label: 'Справочник блоков', icon: '❑' },
   { path: 'users', label: 'Пользователи', icon: '☺', adminOnly: true },
   { path: 'integrations', label: 'Почта и Telegram', icon: '✉', adminOnly: true },
@@ -32,6 +34,7 @@ const TITLES: Record<string, string> = {
   finance: 'Финансы и взаиморасчёты',
   suppliers: 'Поставщики',
   products: 'Продукция и номенклатура',
+  permits: 'Разрешительные документы и сроки',
   blocks: 'Справочник блоков дашборда',
   users: 'Пользователи и доступ',
   integrations: 'Почта и Telegram',
@@ -69,6 +72,7 @@ export default function App() {
   else if (section === 'finance') page = <Finance navigate={navigate} />
   else if (section === 'suppliers') page = <Suppliers />
   else if (section === 'products') page = <Products />
+  else if (section === 'permits') page = <Permits />
   else if (section === 'blocks') page = <Blocks />
   else if (section === 'users') page = <Users />
   else if (section === 'integrations') page = <Integrations />

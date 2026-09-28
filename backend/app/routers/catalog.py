@@ -1,10 +1,10 @@
+from datetime import date, timedelta
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..db import get_db
-from datetime import date, timedelta
-
 from ..models import ChecklistTemplate, DocType, Permit, Product, Stage, Supplier, User
 from ..realtime import hub
 from ..reference import GROUPS, PIPELINES, TRANSPORT_MODES
