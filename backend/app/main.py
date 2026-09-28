@@ -2,6 +2,7 @@ import asyncio
 import contextlib
 import logging
 from contextlib import asynccontextmanager
+from datetime import date
 
 from fastapi import FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
@@ -11,6 +12,7 @@ from .config import settings
 from .db import Base, SessionLocal, engine
 from .migrate import run as run_migrations
 from .models import *  # noqa: F401,F403  (registers all tables on Base.metadata)
+from . import digest
 from .integrations import sync_gmail
 from .realtime import hub
 from .routers import auth, catalog, communications, dashboard, deals, export, files, imports, ws
@@ -45,14 +47,37 @@ async def lifespan(app: FastAPI):
             except Exception as exc:  # never take down the API for a mail outage
                 log.warning("Gmail background sync skipped: %s", exc)
 
+    async def digest_worker():
+        # Проверяем раз в час и шлём один раз в назначенный час. Без внешнего
+        # планировщика: приложение и так живёт постоянно, а лишняя зависимость
+        # ради одного сообщения в день не оправдана.
+        sent_on: date | None = None
+        while True:
+            await asyncio.sleep(3600)
+            try:
+                if not digest.due_now():
+                    continue
+                today = date.today()
+                if sent_on == today:
+                    continue
+                async with SessionLocal() as db:
+                    result = await digest.send(db)
+                sent_on = today
+                log.info("Дайджест: %s", "отправлен" if result["sent"] else result.get("reason"))
+            except Exception as exc:  # сводка не повод ронять API
+                log.warning("Дайджест пропущен: %s", exc)
+
     worker = asyncio.create_task(inbox_worker(), name="gmail-inbox-sync")
+    digest_task = asyncio.create_task(digest_worker(), name="daily-digest")
     log.info("%s API ready", settings.app_name)
     try:
         yield
     finally:
         worker.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await worker
+        digest_task.cancel()
+        for task in (worker, digest_task):
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
     await engine.dispose()
 
 

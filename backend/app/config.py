@@ -29,5 +29,10 @@ class Settings(BaseSettings):
     telegram_webhook_secret: str = ""
     gmail_poll_interval_minutes: int = 5
 
+    # Ежедневная сводка. Пустой чат = сводка собирается, но никуда не уходит:
+    # её всё равно можно посмотреть вручную на странице «Почта и Telegram».
+    telegram_digest_chat_id: str = ""
+    digest_hour: int = 9
+
 
 settings = Settings()

@@ -115,3 +115,24 @@ async def send_message(deal_id: int, payload: CommunicationSend, db: AsyncSessio
         await hub.broadcast("message.sent", {"deal_id": deal.id, "provider": "telegram"})
         return stored
     raise HTTPException(status_code=422, detail="Noma’lum aloqa kanali")
+
+
+@router.get("/digest/preview")
+async def digest_preview(db: AsyncSession = Depends(get_db), _: User = Depends(current_user)):
+    """Текст сегодняшней сводки — посмотреть, не отправляя."""
+    from ..digest import collect, render
+
+    data = await collect(db)
+    return {"text": render(data), "red_zone": data["red_zone"]}
+
+
+@router.post("/digest/send")
+async def digest_send(
+    chat_id: str = "",
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(can_edit),
+):
+    """Отправить сводку сейчас. Без настроенного бота вернёт текст и причину."""
+    from ..digest import send
+
+    return await send(db, chat_id)
