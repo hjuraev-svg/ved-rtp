@@ -34,6 +34,9 @@ export default function AddPayment({
     paid_at: new Date().toISOString().slice(0, 10),
     doc_number: '',
   })
+  // Сумма инвойса правится здесь же: платёж часто заводят раньше, чем кто-то
+  // дошёл до карточки сделки проставить сумму контракта.
+  const [invoice, setInvoice] = useState('')
   const [busy, setBusy] = useState(false)
 
   const { data: deals } = useLiveData<PayableDeal[]>(
@@ -47,8 +50,19 @@ export default function AddPayment({
     [deals, dealId],
   )
 
+  // Когда позиции заведены, сумма контракта считается из них — править её
+  // руками бессмысленно: следующее изменение состава всё равно пересчитает.
+  const invoiceLocked = !!picked && picked.items.length > 0
+  const rest = useMemo(() => {
+    if (!picked) return null
+    const inv = invoice === '' ? null : Number(invoice)
+    if (inv === null || Number.isNaN(inv)) return null
+    return inv - Number(picked.paid ?? 0)
+  }, [picked, invoice])
+
   function choose(d: PayableDeal) {
     setDealId(d.deal_id)
+    setInvoice(d.invoice_amount ?? '')
     // Валюта и сумма подставляются из сделки: чаще всего гасят остаток целиком.
     setForm((f) => ({
       ...f,
@@ -64,6 +78,15 @@ export default function AddPayment({
     if (form.status === 'planned' && !form.due_date) return notify('У планового платежа нужен срок', 'err')
     setBusy(true)
     try {
+      // Сумму инвойса пишем в сделку до платежа: если запись платежа упадёт,
+      // сумма всё равно сохранится и вводить её заново не придётся.
+      const changed = invoice !== (picked?.invoice_amount ?? '')
+      if (!invoiceLocked && changed && invoice !== '') {
+        await api.patch(`/api/deals/${dealId}`, {
+          contract_amount: Number(invoice),
+          currency: form.currency || picked?.currency || 'USD',
+        })
+      }
       await api.post(`/api/deals/${dealId}/payments`, {
         direction: form.direction,
         status: form.status,
@@ -138,17 +161,37 @@ export default function AddPayment({
               <div style={{ flex: 1 }} />
               <button className="btn sm" onClick={() => setDealId(null)}>Другая</button>
             </div>
-            <div className="row" style={{ gap: 14, marginTop: 8, flexWrap: 'wrap' }}>
-              <span className="small">
-                Инвойс: <b>{picked.invoice_amount ? fmtMoney(picked.invoice_amount, picked.currency) : '—'}</b>
-              </span>
+            <div className="row" style={{ gap: 14, marginTop: 10, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+              <Field label={invoiceLocked ? 'Сумма инвойса (из позиций)' : 'Сумма инвойса'}>
+                <input
+                  className="input"
+                  type="number"
+                  step="0.01"
+                  style={{ maxWidth: 170 }}
+                  value={invoice}
+                  disabled={invoiceLocked}
+                  placeholder="введите сумму"
+                  title={invoiceLocked
+                    ? 'Считается из состава поставки — правится во вкладке «Позиции»'
+                    : undefined}
+                  onChange={(e) => setInvoice(e.target.value)}
+                />
+              </Field>
               <span className="small">Оплачено: <b>{fmtMoney(picked.paid, picked.currency)}</b></span>
               <span className="small">
                 Остаток:{' '}
-                <b style={{ color: Number(picked.rest ?? 0) > 0 ? 'var(--red)' : 'var(--green)' }}>
-                  {picked.rest !== null ? fmtMoney(picked.rest, picked.currency) : '—'}
+                <b style={{ color: (rest ?? 0) > 0 ? 'var(--red)' : 'var(--green)' }}>
+                  {rest !== null ? fmtMoney(String(rest), form.currency || picked.currency) : '—'}
                 </b>
               </span>
+              {!invoiceLocked && rest !== null && rest > 0 && (
+                <button
+                  className="btn sm"
+                  onClick={() => setForm((f) => ({ ...f, amount: String(rest) }))}
+                >
+                  Платёж = остаток
+                </button>
+              )}
             </div>
             {picked.items.length > 0 ? (
               <div className="small" style={{ marginTop: 8 }}>
