@@ -1,8 +1,9 @@
 import { useState } from 'react'
 import { api } from '../api'
-import { useLiveData } from '../store'
+import { useAuth, useLiveData } from '../store'
 import type { Finance as FinanceData, Money, Pipeline } from '../types'
 import { Empty, ErrorBox, Loading, Panel } from '../components/ui'
+import AddPayment from '../components/AddPayment'
 import { fmtDate, fmtMoney } from '../util'
 
 /** Суммы не приводятся к одной валюте: курс на дату есть не у каждого платежа,
@@ -12,9 +13,11 @@ function money(list: Money[]) {
 }
 
 export default function Finance({ navigate }: { navigate: (path: string) => void }) {
+  const { canEdit } = useAuth()
   const [pipeline, setPipeline] = useState('')
+  const [adding, setAdding] = useState(false)
   const { data: pipelines } = useLiveData<Pipeline[]>(() => api.get('/api/pipelines'), [])
-  const { data, loading, error } = useLiveData<FinanceData>(
+  const { data, loading, error, reload } = useLiveData<FinanceData>(
     () => api.get(`/api/dashboard/finance${pipeline ? `?pipeline=${pipeline}` : ''}`),
     [pipeline],
     (e) => e.startsWith('payment') || e.startsWith('item') || e.startsWith('deal'),
@@ -37,7 +40,14 @@ export default function Finance({ navigate }: { navigate: (path: string) => void
         {data.overdue_count > 0 && (
           <span className="badge red">Просроченных платежей: {data.overdue_count}</span>
         )}
+        {canEdit && (
+          <button className="btn primary" onClick={() => setAdding(true)}>+ Платёж</button>
+        )}
       </div>
+
+      {adding && (
+        <AddPayment onClose={() => setAdding(false)} onSaved={() => { setAdding(false); reload() }} />
+      )}
 
       <div className="kpi-row">
         <div className="card kpi">
@@ -103,6 +113,8 @@ export default function Finance({ navigate }: { navigate: (path: string) => void
       <div style={{ height: 16 }} />
 
       <Panel title={`Задолженность по сделкам${data.debt_count > data.debts.length ? ` · показано ${data.debts.length} из ${data.debt_count}` : ''}`}>
+        {/* «За что платим» раскрывается прямо в строке — отдельный переход
+            ради двух названий и объёма был бы лишним щелчком. */}
         {!data.debts.length ? (
           <Empty text="Непогашенных остатков нет." />
         ) : (
@@ -123,6 +135,17 @@ export default function Finance({ navigate }: { navigate: (path: string) => void
                     <td>
                       <div className="mono small faint">{d.code}</div>
                       <div>{d.title}</div>
+                      {d.items?.length > 0 && (
+                        <div className="small faint" style={{ marginTop: 4 }}>
+                          {d.items.map((i, n) => (
+                            <div key={n}>
+                              {i.name}
+                              {i.supplier_name && <> · <i>{i.supplier_name}</i></>}
+                              {i.qty && <> — {i.qty} {i.unit}</>}
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </td>
                     <td className="nowrap">{d.supplier}</td>
                     <td className="num nowrap">{fmtMoney(d.contract_amount, d.currency)}</td>

@@ -11,6 +11,7 @@ const BLANK: NewProduct = {
   code: '',
   supplier_code: '',
   name: '',
+  supplier_name: '',
   kind: '',
   unit: '',
   usage: '',
@@ -312,7 +313,7 @@ interface ImportResult {
   total_rows: number
   ready: number
   skipped: number
-  preview: { code: string; name: string; kind: string; unit: string; supplier_name: string }[]
+  preview: { code: string; name: string; kind: string; unit: string; supplier_title: string }[]
   problems: { line: number; text: string; reason: string }[]
 }
 
@@ -408,7 +409,7 @@ function ImportProducts({ onClose, onDone }: { onClose: () => void; onDone: () =
                       <td>{r.name}</td>
                       <td>{r.kind || '—'}</td>
                       <td className="faint">{r.unit || '—'}</td>
-                      <td className="small">{r.supplier_name || '—'}</td>
+                      <td className="small">{r.supplier_title || "—"}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -545,13 +546,21 @@ function ProductForm({
               </select>
             </Field>
           </div>
-          <Field label="Наименование">
+          <Field label="Название у нас (JNS LABS)">
             <input
               className="input"
               value={form.name}
               autoFocus
               placeholder="Отдушка для геля, парфюмерная композиция"
               onChange={(e) => set('name', e.target.value)}
+            />
+          </Field>
+          <Field label="Название в документах поставщика">
+            <input
+              className="input"
+              value={form.supplier_name}
+              placeholder="как написано в инвойсе: Lavender Oil 40/60"
+              onChange={(e) => set('supplier_name', e.target.value)}
             />
           </Field>
           <Field label="Для чего используется">

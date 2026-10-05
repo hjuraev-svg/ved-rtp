@@ -40,6 +40,9 @@ STATEMENTS = [
     "ALTER TABLE deals ADD COLUMN IF NOT EXISTS customs_duty NUMERIC(16,2)",
     "ALTER TABLE deals ADD COLUMN IF NOT EXISTS broker_fee NUMERIC(16,2)",
     "ALTER TABLE deals ADD COLUMN IF NOT EXISTS other_costs NUMERIC(16,2)",
+    # 2026-10: название позиции у поставщика рядом с внутренним названием.
+    "ALTER TABLE products ADD COLUMN IF NOT EXISTS supplier_name VARCHAR(300) NOT NULL DEFAULT ''",
+    "ALTER TABLE deal_items ADD COLUMN IF NOT EXISTS supplier_name VARCHAR(300) NOT NULL DEFAULT ''",
 ]
 
 

@@ -193,7 +193,15 @@ export default function DealDetail({
 }
 
 // ---------------------------------------------------------------- позиции
-const BLANK_ITEM = { product_id: null as number | null, name: '', unit: '', qty: '', unit_price: '', note: '' }
+const BLANK_ITEM = {
+  product_id: null as number | null,
+  name: '',
+  supplier_name: '',
+  unit: '',
+  qty: '',
+  unit_price: '',
+  note: '',
+}
 
 function Items({ dealId, deal, onChanged }: { dealId: number; deal: Deal; onChanged: () => void }) {
   const { canEdit } = useAuth()
@@ -217,6 +225,7 @@ function Items({ dealId, deal, onChanged }: { dealId: number; deal: Deal; onChan
       ...f,
       product_id: p ? p.id : null,
       name: p ? p.name : f.name,
+      supplier_name: p ? p.supplier_name || f.supplier_name : f.supplier_name,
       unit: p ? p.unit || f.unit : f.unit,
     }))
   }
@@ -228,6 +237,7 @@ function Items({ dealId, deal, onChanged }: { dealId: number; deal: Deal; onChan
       const body = {
         product_id: form.product_id,
         name: form.name.trim(),
+        supplier_name: form.supplier_name.trim(),
         unit: form.unit,
         qty: form.qty === '' ? null : Number(form.qty),
         unit_price: form.unit_price === '' ? null : Number(form.unit_price),
@@ -269,10 +279,18 @@ function Items({ dealId, deal, onChanged }: { dealId: number; deal: Deal; onChan
                 ))}
               </select>
             </Field>
-            <Field label="Наименование">
+            <Field label="Название у нас (JNS LABS)">
               <input className="input" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
             </Field>
           </div>
+          <Field label="Название в документах поставщика">
+            <input
+              className="input"
+              value={form.supplier_name}
+              placeholder="как написано в инвойсе"
+              onChange={(e) => setForm({ ...form, supplier_name: e.target.value })}
+            />
+          </Field>
           <div className="grid-2">
             <Field label="Количество">
               <input className="input" type="number" step="0.001" value={form.qty}
@@ -327,6 +345,11 @@ function Items({ dealId, deal, onChanged }: { dealId: number; deal: Deal; onChan
                     <tr key={i.id}>
                       <td>
                         <b style={{ fontWeight: 550 }}>{i.name}</b>
+                        {i.supplier_name && (
+                          <div className="small faint" title="Название в документах поставщика">
+                            <i>{i.supplier_name}</i>
+                          </div>
+                        )}
                         {i.product?.code && <div className="small faint mono">{i.product.code}</div>}
                         {i.note && <div className="small faint">{i.note}</div>}
                       </td>
@@ -339,7 +362,7 @@ function Items({ dealId, deal, onChanged }: { dealId: number; deal: Deal; onChan
                           <button className="btn sm" onClick={() => {
                             setEditingId(i.id)
                             setForm({
-                              product_id: i.product_id, name: i.name, unit: i.unit,
+                              product_id: i.product_id, name: i.name, supplier_name: i.supplier_name, unit: i.unit,
                               qty: i.qty ?? '', unit_price: i.unit_price ?? '', note: i.note,
                             })
                           }}>Изменить</button>

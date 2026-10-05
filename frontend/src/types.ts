@@ -47,7 +47,10 @@ export interface Product {
   id: number
   code: string
   supplier_code: string
+  /** Название у нас, в JNS LABS. */
   name: string
+  /** Как позиция названа в документах поставщика — в инвойсе оно другое. */
+  supplier_name: string
   kind: string
   unit: string
   usage: string
@@ -62,6 +65,7 @@ export interface DealItem {
   product_id: number | null
   product: Product | null
   name: string
+  supplier_name: string
   unit: string
   qty: string | null
   unit_price: string | null
@@ -91,6 +95,15 @@ export interface Money {
   amount: string
 }
 
+export interface DealItemBrief {
+  name: string
+  /** Как позиция названа в документах поставщика. */
+  supplier_name: string
+  qty: string | null
+  unit: string
+  amount: string | null
+}
+
 export interface FinanceDebt {
   deal_id: number
   code: string
@@ -100,6 +113,20 @@ export interface FinanceDebt {
   contract_amount: string
   paid: string
   rest: string
+  items: DealItemBrief[]
+}
+
+export interface PayableDeal {
+  deal_id: number
+  code: string
+  title: string
+  pipeline: string
+  supplier: string
+  currency: string
+  invoice_amount: string | null
+  paid: string
+  rest: string | null
+  items: DealItemBrief[]
 }
 
 export interface FinanceScheduleRow {

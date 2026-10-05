@@ -93,7 +93,12 @@ class Product(Base):
     # Артикул поставщика — отдельно от внутреннего кода: у одной позиции свой
     # номер в нашей номенклатуре и свой в прайсе поставщика.
     supplier_code: Mapped[str] = mapped_column(String(80), default="")
+    # Название у нас — то, под которым позиция живёт в JNS LABS.
     name: Mapped[str] = mapped_column(String(300), index=True)
+    # Название в документах поставщика. Часто другое: в инвойсе «Lavender Oil
+    # 40/60», у нас «Отдушка лаванда». Нужны оба — по первому сверяют инвойс,
+    # по второму ищут на складе.
+    supplier_name: Mapped[str] = mapped_column(String(300), default="")
     # Тип: Сырьё, Упаковка, Готовая продукция, Оборудование, Запчасти…
     # Свободный текст, как и категория поставщика: номенклатура шире, чем
     # заранее известный перечень.
@@ -223,6 +228,8 @@ class DealItem(Base):
     # Наименование на момент сделки: в документах оно своё, и переименование
     # позиции в справочнике не должно задним числом менять прошлые поставки.
     name: Mapped[str] = mapped_column(String(300), default="")
+    # Как эта же позиция названа в инвойсе поставщика — снимком, как и name.
+    supplier_name: Mapped[str] = mapped_column(String(300), default="")
     unit: Mapped[str] = mapped_column(String(24), default="")
     qty: Mapped[float | None] = mapped_column(Numeric(16, 3), nullable=True)
     unit_price: Mapped[float | None] = mapped_column(Numeric(16, 4), nullable=True)

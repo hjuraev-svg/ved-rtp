@@ -113,6 +113,7 @@ class ProductOut(ORMModel):
     code: str
     supplier_code: str
     name: str
+    supplier_name: str
     kind: str
     unit: str
     usage: str
@@ -125,6 +126,7 @@ class ProductIn(BaseModel):
     name: str
     code: str = ""
     supplier_code: str = ""
+    supplier_name: str = ""
     kind: str = ""
     unit: str = ""
     usage: str = ""
@@ -138,6 +140,7 @@ class DealItemOut(ORMModel):
     product_id: int | None
     product: ProductOut | None
     name: str
+    supplier_name: str
     unit: str
     qty: Decimal | None
     unit_price: Decimal | None
@@ -149,6 +152,7 @@ class DealItemOut(ORMModel):
 class DealItemIn(BaseModel):
     product_id: int | None = None
     name: str = ""
+    supplier_name: str = ""
     unit: str = ""
     qty: Decimal | None = None
     unit_price: Decimal | None = None

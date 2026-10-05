@@ -38,6 +38,12 @@ PRODUCT_COLUMNS: dict[str, str] = {
     "единицаизмерения": "unit",
     "едизм": "unit",
     "ед": "unit",
+    # Только однозначные варианты: «название поставщика» читается и как имя
+    # компании, и как название позиции в его документах — такой столбец лучше
+    # не угадывать, а оставить человеку.
+    "названиевинвойсе": "supplier_name",
+    "названиеупоставщика": "supplier_name",
+    "наименованиевинвойсе": "supplier_name",
     "артикулпоставщика": "supplier_code",
     "кодпоставщика": "supplier_code",
     "поставщик": "supplier",
@@ -105,12 +111,13 @@ async def import_products(
     seen_in_batch: set[str] = set()
 
     for line_no, row in enumerate(rows[1:], start=2):
-        rec = {"code": "", "name": "", "kind": "", "unit": "", "supplier_code": "", "usage": ""}
-        supplier_name = ""
+        rec = {"code": "", "name": "", "supplier_name": "", "kind": "",
+               "unit": "", "supplier_code": "", "usage": ""}
+        supplier_company = ""
         for idx, field in mapping.items():
             value = row[idx].strip() if idx < len(row) else ""
             if field == "supplier":
-                supplier_name = value
+                supplier_company = value
             else:
                 rec[field] = value
 
@@ -131,19 +138,20 @@ async def import_products(
             problems.append({"line": line_no, "text": rec["name"], "reason": "уже есть в справочнике"})
             continue
 
-        supplier = by_name.get(supplier_name.strip().lower()) if supplier_name else None
-        if supplier_name and not supplier:
-            problems.append({"line": line_no, "text": rec["name"], "reason": f"поставщик «{supplier_name}» не найден"})
+        supplier = by_name.get(supplier_company.strip().lower()) if supplier_company else None
+        if supplier_company and not supplier:
+            problems.append({"line": line_no, "text": rec["name"], "reason": f"поставщик «{supplier_company}» не найден"})
             continue
 
         parsed.append({**rec, "supplier_id": supplier.id if supplier else None,
-                       "supplier_name": supplier.name if supplier else ""})
+                       "supplier_title": supplier.name if supplier else ""})
 
     if payload.apply and parsed:
         for rec in parsed:
             db.add(Product(
                 code=rec["code"][:80], supplier_code=rec["supplier_code"][:80],
-                name=rec["name"][:300], kind=rec["kind"][:80], unit=rec["unit"][:24],
+                name=rec["name"][:300], supplier_name=rec["supplier_name"][:300],
+                kind=rec["kind"][:80], unit=rec["unit"][:24],
                 usage=rec["usage"], supplier_id=rec["supplier_id"], is_active=True,
             ))
         await db.commit()
@@ -164,6 +172,8 @@ async def import_products(
 async def products_template(_: User = Depends(can_edit)):
     """Готовая шапка — чтобы не угадывать названия столбцов."""
     return {
-        "header": ["Код", "Наименование", "Тип", "Единица", "Артикул поставщика", "Поставщик", "Назначение"],
-        "example": ["JNS 101", "Отдушка лаванда", "Сырьё", "кг", "GF-2201", "", "Парфюмерная композиция"],
+        "header": ["Код", "Наименование", "Название в инвойсе", "Тип", "Единица",
+                   "Артикул поставщика", "Поставщик", "Назначение"],
+        "example": ["JNS 101", "Отдушка лаванда", "Lavender Oil 40/60", "Сырьё", "кг",
+                    "GF-2201", "", "Парфюмерная композиция"],
     }

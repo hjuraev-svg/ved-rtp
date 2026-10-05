@@ -736,6 +736,7 @@ async def add_item(
 ):
     deal = await _get_deal(db, deal_id)
     name = payload.name.strip()
+    supplier_name = payload.supplier_name.strip()
     unit = payload.unit
     if payload.product_id is not None:
         product = await db.get(Product, payload.product_id)
@@ -743,6 +744,7 @@ async def add_item(
             raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Позиция номенклатуры не найдена")
         # Снимок на момент сделки: переименование в справочнике не меняет прошлое.
         name = name or product.name
+        supplier_name = supplier_name or product.supplier_name
         unit = unit or product.unit
     if not name:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Укажите наименование или выберите позицию")
@@ -751,6 +753,7 @@ async def add_item(
         deal_id=deal.id,
         product_id=payload.product_id,
         name=name[:300],
+        supplier_name=supplier_name[:300],
         unit=unit,
         qty=payload.qty,
         unit_price=payload.unit_price,

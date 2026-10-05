@@ -6,7 +6,17 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..db import get_db
-from ..models import Claim, Deal, Payment, Stage, StageEvent, Supplier, User, UserDashboard
+from ..models import (
+    Claim,
+    Deal,
+    DealItem,
+    Payment,
+    Stage,
+    StageEvent,
+    Supplier,
+    User,
+    UserDashboard,
+)
 from ..reference import DEFAULT_PIPELINE, PIPELINE_BY_CODE
 from ..schemas import DashboardOut, LayoutIn, LayoutOut
 from ..security import current_user
@@ -235,6 +245,28 @@ async def finance(
         )
     ).all()
 
+    # Состав поставок — «за что платим». Берём одним запросом на все сделки,
+    # чтобы не ходить в базу по разу на строку таблицы.
+    deal_ids = [r[0] for r in per_deal]
+    items_by_deal: dict[int, list[dict]] = {}
+    if deal_ids:
+        item_rows = (
+            await db.execute(
+                select(DealItem).where(DealItem.deal_id.in_(deal_ids))
+                .order_by(DealItem.deal_id, DealItem.order_no, DealItem.id)
+            )
+        ).unique().scalars().all()
+        for it in item_rows:
+            items_by_deal.setdefault(it.deal_id, []).append(
+                {
+                    "name": it.name,
+                    "supplier_name": it.supplier_name,
+                    "qty": it.qty,
+                    "unit": it.unit,
+                    "amount": it.amount,
+                }
+            )
+
     debts = []
     for did, code, title, cur, amount, supplier, paid in per_deal:
         rest = (amount or Decimal(0)) - (paid or Decimal(0))
@@ -250,6 +282,7 @@ async def finance(
                 "contract_amount": amount,
                 "paid": paid or Decimal(0),
                 "rest": rest,
+                "items": items_by_deal.get(did, []),
             }
         )
 
@@ -295,6 +328,69 @@ async def finance(
         "schedule": schedule,
         "overdue_count": sum(1 for s in schedule if s["overdue"]),
     }
+
+
+@router.get("/payable")
+async def payable_deals(
+    q: str = "",
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(current_user),
+):
+    """Действующие сделки с платёжным контекстом — для формы «+ Платёж».
+
+    Отдаёт и те, где сумма ещё не заполнена: платёж бывает известен раньше,
+    чем оформлен инвойс, и прятать такую сделку из выбора значит заставлять
+    человека идти заводить её в другом месте.
+    """
+    stmt = (
+        select(
+            Deal.id, Deal.code, Deal.title, Deal.currency, Deal.contract_amount,
+            Deal.pipeline, Supplier.name,
+            func.coalesce(
+                select(func.sum(Payment.amount))
+                .where(Payment.deal_id == Deal.id, Payment.status == "paid",
+                       Payment.direction == "out")
+                .correlate(Deal).scalar_subquery(), 0,
+            ),
+        )
+        .outerjoin(Supplier, Supplier.id == Deal.supplier_id)
+        .where(Deal.status.in_(OPEN_STATUSES))
+        .order_by(Deal.code)
+    )
+    if q.strip():
+        needle = f"%{q.strip().lower()}%"
+        stmt = stmt.where(
+            func.lower(Deal.code).like(needle)
+            | func.lower(Deal.title).like(needle)
+            | func.lower(func.coalesce(Supplier.name, "")).like(needle)
+        )
+    rows = (await db.execute(stmt.limit(200))).all()
+
+    ids = [r[0] for r in rows]
+    items_by_deal: dict[int, list[dict]] = {}
+    if ids:
+        for it in (
+            await db.execute(
+                select(DealItem).where(DealItem.deal_id.in_(ids))
+                .order_by(DealItem.deal_id, DealItem.order_no, DealItem.id)
+            )
+        ).unique().scalars().all():
+            items_by_deal.setdefault(it.deal_id, []).append(
+                {"name": it.name, "supplier_name": it.supplier_name,
+                 "qty": it.qty, "unit": it.unit, "amount": it.amount}
+            )
+
+    return [
+        {
+            "deal_id": did, "code": code, "title": title, "pipeline": pipeline,
+            "supplier": supplier or "—", "currency": cur or "USD",
+            "invoice_amount": amount,
+            "paid": paid or Decimal(0),
+            "rest": (amount - (paid or Decimal(0))) if amount is not None else None,
+            "items": items_by_deal.get(did, []),
+        }
+        for did, code, title, cur, amount, pipeline, supplier, paid in rows
+    ]
 
 
 @router.get("/unk-registry")
