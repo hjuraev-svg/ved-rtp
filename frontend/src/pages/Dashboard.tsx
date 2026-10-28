@@ -4,6 +4,7 @@ import { useLiveData, useToast } from '../store'
 import type { Dashboard as DashboardData, Pipeline, Tile } from '../types'
 import { Empty, ErrorBox, Loading } from '../components/ui'
 import { GripIcon, StageIcon } from '../components/icons'
+import FinanceFunnel from './FinanceFunnel'
 import { GROUP_COLORS, days, fmtDateTime } from '../util'
 
 interface Layout {
@@ -18,6 +19,7 @@ export default function Dashboard({ navigate }: { navigate: (p: string) => void 
   const { notify } = useToast()
   const [pipelines, setPipelines] = useState<Pipeline[]>([])
   // Remembered per browser so the dashboard opens on the type you work with.
+  const [funnel, setFunnel] = useState<'process' | 'finance'>('process')
   const [pipeline, setPipeline] = useState(() => localStorage.getItem(PIPE_KEY) || 'import')
 
   useEffect(() => {
@@ -139,6 +141,25 @@ export default function Dashboard({ navigate }: { navigate: (p: string) => void 
 
   return (
     <>
+      {/* Две воронки по одним и тем же сделкам: процессная отвечает «где груз»,
+          финансовая — «кому сколько должны и что мешает заплатить». */}
+      <div className="card" style={{ marginBottom: 12 }}>
+        <div className="tabs">
+          <button
+            className={`tab ${funnel === 'process' ? 'active' : ''}`}
+            onClick={() => setFunnel('process')}
+          >
+            ▦ Воронка процессов
+          </button>
+          <button
+            className={`tab ${funnel === 'finance' ? 'active' : ''}`}
+            onClick={() => setFunnel('finance')}
+          >
+            ₴ Финансовая воронка
+          </button>
+        </div>
+      </div>
+
       {pipelines.length > 1 && (
         <div className="card" style={{ marginBottom: 16 }}>
           <div className="tabs">
@@ -156,6 +177,10 @@ export default function Dashboard({ navigate }: { navigate: (p: string) => void 
         </div>
       )}
 
+      {funnel === 'finance' && <FinanceFunnel pipeline={pipeline} navigate={navigate} />}
+
+      {funnel === 'process' && (
+        <>
       {editing ? (
         <div className="editbar">
           <b style={{ fontSize: 13 }}>Настройка дашборда</b>
@@ -332,6 +357,8 @@ export default function Dashboard({ navigate }: { navigate: (p: string) => void 
       <div className="small faint" style={{ marginTop: 14, textAlign: 'right' }}>
         Обновлено: {fmtDateTime(data.generated_at)} · данные обновляются автоматически
       </div>
+        </>
+      )}
     </>
   )
 }
