@@ -9,7 +9,9 @@ from ..db import get_db
 from ..models import (
     Claim,
     Deal,
+    DealDocument,
     DealItem,
+    DocType,
     Payment,
     Stage,
     StageEvent,
@@ -17,7 +19,12 @@ from ..models import (
     User,
     UserDashboard,
 )
-from ..reference import DEFAULT_PIPELINE, PIPELINE_BY_CODE
+from ..reference import (
+    DEFAULT_PIPELINE,
+    FINANCE_STAGES,
+    PAYMENT_DOCS,
+    PIPELINE_BY_CODE,
+)
 from ..schemas import DashboardOut, LayoutIn, LayoutOut
 from ..security import current_user
 from ..services import OPEN_STATUSES, build_dashboard
@@ -327,6 +334,131 @@ async def finance(
         "debt_count": len(debts),
         "schedule": schedule,
         "overdue_count": sum(1 for s in schedule if s["overdue"]),
+    }
+
+
+@router.get("/finance-funnel")
+async def finance_funnel(
+    pipeline: str = "",
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(current_user),
+):
+    """Финансовая воронка: кому сколько должны и что мешает заплатить.
+
+    Сделка попадает ровно в один этап — порядок проверки в FINANCE_STAGES и
+    есть правило. Пересекающиеся категории («и частично оплачено, и
+    просрочено») в воронке бесполезны: по ней принимают решение, а не
+    любуются, и сумма должна сходиться.
+    """
+    today = date.today()
+    where = [Deal.status.in_(OPEN_STATUSES)]
+    if pipeline:
+        where.append(Deal.pipeline == pipeline)
+
+    deals = (
+        await db.execute(
+            select(Deal.id, Deal.code, Deal.title, Deal.pipeline, Deal.stage_id,
+                   Deal.currency, Deal.contract_amount, Deal.unk_number, Supplier.name)
+            .outerjoin(Supplier, Supplier.id == Deal.supplier_id)
+            .where(*where)
+        )
+    ).all()
+    ids = [d[0] for d in deals]
+    if not ids:
+        return {"pipeline": pipeline or None, "stages": [], "by_supplier": [], "total_deals": 0}
+
+    # Оплачено и просрочено — по одному запросу на всё, а не по разу на сделку.
+    paid_map = dict(
+        (
+            await db.execute(
+                select(Payment.deal_id, func.sum(Payment.amount))
+                .where(Payment.deal_id.in_(ids), Payment.status == "paid", Payment.direction == "out")
+                .group_by(Payment.deal_id)
+            )
+        ).all()
+    )
+    overdue_ids = set(
+        (
+            await db.execute(
+                select(Payment.deal_id).where(
+                    Payment.deal_id.in_(ids), Payment.status == "planned",
+                    Payment.direction == "out",
+                    Payment.due_date.is_not(None), Payment.due_date < today,
+                )
+            )
+        ).scalars().all()
+    )
+
+    # Какие документы для оплаты уже получены.
+    doc_rows = (
+        await db.execute(
+            select(DealDocument.deal_id, DocType.code)
+            .join(DocType, DocType.id == DealDocument.doc_type_id)
+            .where(DealDocument.deal_id.in_(ids), DealDocument.is_received.is_(True))
+        )
+    ).all()
+    have_docs: dict[int, set[str]] = {}
+    for did, code in doc_rows:
+        have_docs.setdefault(did, set()).add(code)
+
+    buckets: dict[str, list[dict]] = {key: [] for key, *_ in FINANCE_STAGES}
+    owed: dict[tuple[str, str], Decimal] = {}
+
+    for did, code, title, pl, stage_id, cur, amount, unk, supplier in deals:
+        paid = paid_map.get(did) or Decimal(0)
+        rest = (amount - paid) if amount is not None else None
+        need = set(PAYMENT_DOCS.get(pl, []))
+        missing = sorted(need - have_docs.get(did, set()))
+
+        if amount is not None and rest is not None and rest <= 0:
+            key = "paid"
+        elif did in overdue_ids:
+            key = "overdue"
+        elif paid > 0:
+            key = "partial"
+        elif amount is None:
+            key = "no_amount"
+        elif missing:
+            key = "waiting_docs"
+        else:
+            key = "ready"
+
+        buckets[key].append({
+            "deal_id": did, "code": code, "title": title, "pipeline": pl,
+            "stage_id": stage_id, "supplier": supplier or "—",
+            "currency": cur or "USD", "contract_amount": amount,
+            "paid": paid, "rest": rest, "missing_docs": missing,
+            "unk_missing": pl == "import" and stage_id >= 7 and not unk,
+        })
+        if rest is not None and rest > 0:
+            k = (supplier or "—", cur or "USD")
+            owed[k] = owed.get(k, Decimal(0)) + rest
+
+    stages = []
+    for key, name, hint, color in FINANCE_STAGES:
+        rows = buckets[key]
+        sums: dict[str, Decimal] = {}
+        for r in rows:
+            v = r["rest"] if r["rest"] is not None else r["contract_amount"]
+            if v:
+                sums[r["currency"]] = sums.get(r["currency"], Decimal(0)) + v
+        stages.append({
+            "key": key, "name": name, "hint": hint, "color": color,
+            "count": len(rows),
+            "amounts": [{"currency": c, "amount": a} for c, a in sorted(sums.items())],
+            "deals": sorted(rows, key=lambda r: -(r["rest"] or Decimal(0)))[:60],
+        })
+
+    by_supplier = sorted(
+        ({"supplier": s, "currency": c, "rest": a} for (s, c), a in owed.items()),
+        key=lambda r: -r["rest"],
+    )
+
+    return {
+        "pipeline": pipeline or None,
+        "total_deals": len(deals),
+        "stages": stages,
+        "by_supplier": by_supplier[:40],
     }
 
 
