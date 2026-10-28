@@ -16,7 +16,14 @@ param(
     [string]$HostName = 'ubuntu@176.96.241.39',
     [string]$RemoteDir = '~/ved',
     [string]$PublicUrl = 'https://jnslabsonline.uz/ved',
-    [switch]$SkipBackup
+    [switch]$SkipBackup,
+    # BatchMode запрещает любой интерактивный ввод, включая запрос парольной
+    # фразы ключа. Для защищённого фразой ключа это гарантированный отказ, а
+    # ssh-agent в Windows по умолчанию отключён и требует прав администратора.
+    # Поэтому по умолчанию скрипт работает интерактивно: ssh сам спросит фразу
+    # у человека, который его запустил. Для автоматического запуска — ключ
+    # без фразы и этот переключатель.
+    [switch]$NonInteractive
 )
 
 $ErrorActionPreference = 'Stop'
@@ -24,7 +31,8 @@ $repoPath = $PSScriptRoot
 $keyPath = Join-Path $env:USERPROFILE '.ssh\ved_rtp_deploy'
 $runtimeDir = Join-Path $repoPath '.runtime'
 $archivePath = Join-Path $runtimeDir 'public-deploy.tar'
-$sshArgs = @('-i', $keyPath, '-o', 'IdentitiesOnly=yes', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=15')
+$sshArgs = @('-i', $keyPath, '-o', 'IdentitiesOnly=yes', '-o', 'ConnectTimeout=15')
+if ($NonInteractive) { $sshArgs += @('-o', 'BatchMode=yes') }
 
 function Invoke-Remote([string]$command) {
     & ssh @sshArgs $HostName $command
