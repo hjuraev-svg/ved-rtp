@@ -147,7 +147,12 @@ export default function Dashboard({ navigate }: { navigate: (p: string) => void 
         <div className="tabs">
           <button
             className={`tab ${funnel === 'process' ? 'active' : ''}`}
-            onClick={() => setFunnel('process')}
+            onClick={() => {
+              // У процессной воронки «Все типы» не бывает — возвращаем
+              // конкретный маршрут, иначе она осталась бы без этапов.
+              if (!pipeline) setPipeline(pipelines[0]?.code ?? 'import')
+              setFunnel('process')
+            }}
           >
             ▦ Воронка процессов
           </button>
@@ -163,6 +168,19 @@ export default function Dashboard({ navigate }: { navigate: (p: string) => void 
       {pipelines.length > 1 && (
         <div className="card" style={{ marginBottom: 16 }}>
           <div className="tabs">
+            {/* «Все типы» есть только у финансовой воронки: там этапы одни и те
+                же для любого маршрута, и долги складываются осмысленно. У
+                процессной воронки у каждого типа свой набор этапов — сводить
+                их в одну таблицу было бы нечего. */}
+            {funnel === 'finance' && (
+              <button
+                className={`tab ${pipeline === '' ? 'active' : ''}`}
+                title="Импорт, местные закупки, услуги и экспорт вместе"
+                onClick={() => setPipeline('')}
+              >
+                Все типы
+              </button>
+            )}
             {pipelines.map((p) => (
               <button
                 key={p.code}
