@@ -404,3 +404,39 @@ export interface Permit {
   /** Дней до истечения; null у бессрочных, отрицательное — просрочен. */
   days_left: number | null
 }
+
+/** Строка финансового реестра. Долг и статус считает сервер. */
+export interface FinanceRecord {
+  id: number
+  supplier_id: number
+  supplier_name: string
+  product_name: string
+  quantity: string | null
+  unit: string
+  invoice_number: string
+  invoice_amount: string
+  currency: string
+  payment_terms: string
+  paid_amount: string
+  due_date: string | null
+  note: string
+  debt: string
+  status: 'unpaid' | 'partial' | 'paid' | 'overdue'
+  days_overdue: number | null
+}
+
+export interface LedgerLine {
+  currency: string
+  credit: string
+  debit: string
+  balance: string
+  overdue: string
+  records: number
+  overdue_records: number
+}
+
+export interface LedgerReport {
+  totals: LedgerLine[]
+  suppliers: (LedgerLine & { supplier_id: number; supplier: string })[]
+  statuses: { key: FinanceRecord['status']; name: string; count: number }[]
+}

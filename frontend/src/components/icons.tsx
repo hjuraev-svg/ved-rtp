@@ -45,8 +45,15 @@ const P: Record<string, string> = {
   act_claims: 'M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-9M14 3l5 5M14 3v5h5M12 12v3.5M12 18h.01',
 }
 
+const LOCAL_ALIASES: Record<string, string> = {
+  local_payment_done: 'swift',
+  local_pickup: 'agent_pickup',
+  local_act: 'act_claims',
+}
+
 export function StageIcon({ code, size = 22 }: { code: string; size?: number }) {
-  const d = P[code]
+  // У местных закупок коды с префиксом; этапы с тем же смыслом — та же иконка.
+  const d = P[code] ?? P[LOCAL_ALIASES[code] ?? code.replace(/^local_/, '')]
   if (!d) return null
   return (
     <svg

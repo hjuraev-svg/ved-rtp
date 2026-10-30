@@ -15,7 +15,18 @@ from .models import *  # noqa: F401,F403  (registers all tables on Base.metadata
 from . import digest
 from .integrations import sync_gmail
 from .realtime import hub
-from .routers import auth, catalog, communications, dashboard, deals, export, files, imports, ws
+from .routers import (
+    auth,
+    catalog,
+    communications,
+    dashboard,
+    deals,
+    export,
+    files,
+    imports,
+    ledger,
+    ws,
+)
 from .seed import run_seed
 
 logging.basicConfig(
@@ -112,6 +123,7 @@ app.include_router(export.router)
 app.include_router(ws.router)
 app.include_router(communications.router)
 app.include_router(imports.router)
+app.include_router(ledger.router)
 
 
 @app.get("/api/health", tags=["system"])

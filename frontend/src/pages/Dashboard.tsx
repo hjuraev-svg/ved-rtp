@@ -5,6 +5,7 @@ import type { Dashboard as DashboardData, Pipeline, Tile } from '../types'
 import { ErrorBox, Loading } from '../components/ui'
 import { GripIcon, StageIcon } from '../components/icons'
 import FinanceFunnel from './FinanceFunnel'
+import LedgerReport from './LedgerReport'
 import { GROUP_COLORS, fmtDateTime } from '../util'
 
 interface Layout {
@@ -94,6 +95,8 @@ export default function Dashboard({ navigate }: { navigate: (p: string) => void 
   }, [tiles, order])
 
   const visible = editing ? ordered : ordered.filter((t) => !hidden.includes(t.stage_id))
+  // Номер шага в процессе, а не id этапа: у местных и экспорта id начинаются с 101/301.
+  const stepNo = useMemo(() => new Map(tiles.map((t, i) => [t.stage_id, i + 1])), [tiles])
 
   function move(from: number, to: number) {
     if (from === to) return
@@ -307,7 +310,7 @@ export default function Dashboard({ navigate }: { navigate: (p: string) => void 
                 if (!editing) navigate(`deals?stage=${tile.stage_id}`)
               }}
             >
-              <span className="tile-no">{tile.stage_id}</span>
+              <span className="tile-no">{stepNo.get(tile.stage_id)}</span>
               {tile.overdue > 0 && !editing && <span className="tile-flag">{tile.overdue}</span>}
 
               <span className="tile-icon">
@@ -364,6 +367,8 @@ export default function Dashboard({ navigate }: { navigate: (p: string) => void 
       </div>
         </>
       )}
+
+      <LedgerReport navigate={navigate} />
     </>
   )
 }

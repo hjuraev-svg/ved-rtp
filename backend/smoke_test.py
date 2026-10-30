@@ -214,6 +214,26 @@ call("PATCH", f"/api/deals/{did}", ved, {"status": "неизвестно"}, expe
 call("PATCH", f"/api/deals/{did}", ved, {"нет_такого_поля": 1}, expect=422)
 call("GET", "/api/deals/999999", ved, expect=404)
 
+print("\n=== Финансовый процесс ===")
+if sups:
+    rec = call("POST", "/api/ledger", ved,
+               {"supplier_id": sups[0]["id"], "product_name": "Проверка: плёнка ПЭТ",
+                "quantity": 500, "unit": "кг", "invoice_amount": 1000, "currency": "USD",
+                "payment_terms": "50/50", "paid_amount": 400, "due_date": "2020-01-01"}, expect=201)
+    assert rec["debt"] in ("600", "600.00") and rec["status"] == "overdue", "долг/статус посчитаны неверно"
+    rec = call("PATCH", f"/api/ledger/{rec['id']}", ved,
+               {**{k: rec[k] for k in ("supplier_id", "product_name", "quantity", "unit",
+                                       "invoice_amount", "currency", "payment_terms", "due_date")},
+                "paid_amount": 1000})
+    assert rec["status"] == "paid", "полностью оплаченная запись не закрылась"
+    rep = call("GET", "/api/ledger/report", ved)
+    assert any(t["currency"] == "USD" for t in rep["totals"]), "нет итогов в отчёте дебет/кредит"
+    if viewer:
+        call("POST", "/api/ledger", viewer, {"supplier_id": sups[0]["id"], "invoice_amount": 1}, expect=403)
+    call("DELETE", f"/api/ledger/{rec['id']}", ved, expect=204)
+else:
+    skip("поставщиков нет — проверка финансового процесса пропущена")
+
 print("\n=== Выгрузка ===")
 call("GET", "/api/export/deals.csv", ved)
 
