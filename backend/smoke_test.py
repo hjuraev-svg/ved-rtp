@@ -113,16 +113,16 @@ call("GET", "/api/deals", expect=401)
 
 print("\n=== Справочники ===")
 pipes = call("GET", "/api/pipelines", ved)
-assert len(pipes) == 3, "ожидались три типа сделки"
+assert len(pipes) == 4, "ожидались четыре типа сделки"
 for pl in pipes:
     st_ = call("GET", f"/api/stages?pipeline={pl['code']}", ved)
     dc_ = call("GET", f"/api/doc-types?pipeline={pl['code']}", ved)
     print(f"     {pl['name']:<20} этапов {len(st_):<3} документов {len(dc_)}")
-# «Импорт» — это исходный лист Excel, его состав зафиксирован.
+# «Импорт» — 12 этапов воронки, чек-лист и документы из исходного Excel.
 stages = call("GET", "/api/stages?pipeline=import", ved)
 tpl = call("GET", "/api/checklist-template?pipeline=import", ved)
 dt = call("GET", "/api/doc-types?pipeline=import", ved)
-assert len(stages) == 18 and len(tpl) == 24 and len(dt) == 9, "импорт не совпадает с Excel"
+assert len(stages) == 12 and len(tpl) == 24 and len(dt) == 9, "импорт не совпадает с Excel"
 print(f"     этапов {len(stages)}, пунктов чек-листа {len(tpl)}, типов документов {len(dt)}")
 
 print("\n=== Дашборд ===")
