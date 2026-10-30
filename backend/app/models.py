@@ -486,3 +486,35 @@ class CommunicationMessage(Base):
     received_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     metadata_json: Mapped[dict] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+
+
+class FinanceRecord(Base):
+    """Строка финансового реестра: инвойс поставщика и сколько по нему оплачено.
+
+    Отдельно от сделок: сюда вносят и то, что в воронку не заводили. Долг и
+    статус не хранятся — они считаются из суммы, оплаты и срока, иначе
+    разошлись бы с цифрами после первой правки.
+    """
+
+    __tablename__ = "finance_records"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    supplier_id: Mapped[int] = mapped_column(ForeignKey("suppliers.id"), index=True)
+    product_name: Mapped[str] = mapped_column(String(300), default="")
+    quantity: Mapped[float | None] = mapped_column(Numeric(16, 3), nullable=True)
+    # шт | кг | т | л — свободная строка, как и единица у номенклатуры.
+    unit: Mapped[str] = mapped_column(String(24), default="шт")
+    invoice_number: Mapped[str] = mapped_column(String(80), default="")
+    invoice_amount: Mapped[float] = mapped_column(Numeric(16, 2))
+    currency: Mapped[str] = mapped_column(String(8), default="USD")
+    payment_terms: Mapped[str] = mapped_column(String(300), default="")
+    paid_amount: Mapped[float] = mapped_column(Numeric(16, 2), default=0)
+    due_date: Mapped[date | None] = mapped_column(Date, nullable=True, index=True)
+    note: Mapped[str] = mapped_column(Text, default="")
+    created_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+
+    supplier: Mapped[Supplier] = relationship(lazy="joined")

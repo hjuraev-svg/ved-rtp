@@ -14,7 +14,7 @@ import logging
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from .reference import IMPORT_STAGE_REMAP, STAGES
+from .reference import GROUP_BY_KEY, IMPORT_STAGE_REMAP, LOCAL_STAGE_REMAP, STAGES
 
 log = logging.getLogger("ved.migrate")
 
@@ -113,12 +113,81 @@ async def remap_import_stages(conn: AsyncConnection) -> None:
     log.info("import pipeline remapped from 19 to 12 stages")
 
 
+async def remap_local_stages(conn: AsyncConnection) -> None:
+    """2026-10: воронка местных закупок расширена с 5 этапов до 7.
+
+    Новые этапы встают в начало (заявка, RFQ), старые сдвигаются по
+    LOCAL_STAGE_REMAP. Признак старой схемы — у местных есть этап 101, но нет
+    106. На чистой базе этапов ещё нет вовсе, их создаст сид.
+    """
+    has = lambda sid: conn.execute(  # noqa: E731
+        text("SELECT 1 FROM stages WHERE id = :id AND pipeline = 'local'"), {"id": sid}
+    )
+    if (await has(101)).first() is None or (await has(106)).first() is not None:
+        return
+
+    # Сначала этапы: сделки будут ссылаться на 106 и 107, которых ещё нет.
+    # Коды уникальны и частично переезжают на соседей — через временные.
+    await conn.execute(text("UPDATE stages SET code = 'tmp_' || id WHERE pipeline = 'local'"))
+    for row in STAGES:
+        if row["pipeline"] != "local":
+            continue
+        params = {
+            "id": row["id"],
+            "code": row["code"],
+            "name": row["name"],
+            "group_key": row["group_key"],
+            "group_name": GROUP_BY_KEY[row["group_key"]]["name"],
+            "description": row["description"],
+            "how_to_count": row["how_to_count"],
+            "data_source": row["data_source"],
+            "frequency": row["frequency"],
+            "responsible": row["responsible"],
+            "sla": row["sla_days"],
+        }
+        exists = (await has(row["id"])).first() is not None
+        await conn.execute(
+            text(
+                "UPDATE stages SET code = :code, name = :name, group_key = :group_key, "
+                "group_name = :group_name, description = :description, "
+                "how_to_count = :how_to_count, data_source = :data_source, "
+                "frequency = :frequency, responsible = :responsible, sla_days = :sla "
+                "WHERE id = :id"
+                if exists
+                else "INSERT INTO stages (id, pipeline, code, name, group_key, group_name, "
+                "description, how_to_count, data_source, frequency, responsible, sla_days) "
+                "VALUES (:id, 'local', :code, :name, :group_key, :group_name, :description, "
+                ":how_to_count, :data_source, :frequency, :responsible, :sla)"
+            ),
+            params,
+        )
+
+    whens = " ".join(f"WHEN {a} THEN {b}" for a, b in LOCAL_STAGE_REMAP.items())
+    ids = ", ".join(str(a) for a in LOCAL_STAGE_REMAP)
+
+    def case(col: str) -> str:
+        return f"CASE {col} {whens} ELSE {col} END"
+
+    await conn.execute(
+        text(f"UPDATE deals SET stage_id = {case('stage_id')} WHERE stage_id IN ({ids})")
+    )
+    await conn.execute(
+        text(
+            f"UPDATE stage_events SET from_stage_id = {case('from_stage_id')}, "
+            f"to_stage_id = {case('to_stage_id')} "
+            f"WHERE to_stage_id IN ({ids}) OR from_stage_id IN ({ids})"
+        )
+    )
+    log.info("local pipeline remapped from 5 to 7 stages")
+
+
 async def run(conn: AsyncConnection) -> None:
     # Local development uses SQLite and always creates its schema from current
     # models. These forward-only ALTER statements are only for PostgreSQL.
     if conn.dialect.name != "postgresql":
         log.info("schema migration skipped for %s", conn.dialect.name)
         await remap_import_stages(conn)
+        await remap_local_stages(conn)
         return
     for stmt in STATEMENTS:
         try:
@@ -127,3 +196,4 @@ async def run(conn: AsyncConnection) -> None:
             log.warning("migration statement failed (%s): %s", stmt.split(" ADD")[0], exc)
     log.info("schema migration applied (%d statements)", len(STATEMENTS))
     await remap_import_stages(conn)
+    await remap_local_stages(conn)

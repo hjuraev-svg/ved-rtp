@@ -6,6 +6,7 @@ export const GROUP_COLORS: Record<string, string> = {
   customs: '#06b6d4',
   receiving: '#22c55e',
   // Местный поставщик
+  local_purchase: '#3b82f6',
   local_deal: '#8b5cf6',
   local_production: '#f59e0b',
   local_receiving: '#22c55e',

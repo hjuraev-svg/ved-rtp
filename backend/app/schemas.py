@@ -603,3 +603,29 @@ class DashboardOut(BaseModel):
 
 
 TokenOut.model_rebuild()
+
+
+# ---------- финансовый реестр ----------
+class FinanceRecordIn(BaseModel):
+    supplier_id: int
+    product_name: str = ""
+    quantity: Decimal | None = None
+    unit: str = "шт"
+    invoice_number: str = ""
+    invoice_amount: Decimal = Field(ge=0)
+    currency: str = "USD"
+    payment_terms: str = ""
+    paid_amount: Decimal = Field(default=Decimal(0), ge=0)
+    due_date: date | None = None
+    note: str = ""
+
+
+class FinanceRecordOut(FinanceRecordIn):
+    id: int
+    supplier_name: str
+    debt: Decimal
+    # unpaid | partial | paid | overdue
+    status: str
+    days_overdue: int | None
+    created_at: datetime
+    updated_at: datetime
