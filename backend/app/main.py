@@ -83,7 +83,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title=f"{settings.app_name} API",
-    description="Оперативная система контроля ВЭД — 18 блоков дашборда в реальном времени.",
+    description="Оперативная система контроля ВЭД — воронки по четырём направлениям в реальном времени.",
     version="1.0.0",
     lifespan=lifespan,
 )

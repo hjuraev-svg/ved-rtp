@@ -34,7 +34,7 @@ export default function Login() {
         </div>
 
         <h2>Вход в систему</h2>
-        <p className="sub">18 блоков процесса в реальном времени</p>
+        <p className="sub">Импорт, местные закупки, услуги и экспорт в реальном времени</p>
 
         {error && <ErrorBox message={error} />}
 
