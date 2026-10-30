@@ -19,6 +19,7 @@ import json
 import os
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
@@ -122,7 +123,10 @@ for pl in pipes:
 stages = call("GET", "/api/stages?pipeline=import", ved)
 tpl = call("GET", "/api/checklist-template?pipeline=import", ved)
 dt = call("GET", "/api/doc-types?pipeline=import", ved)
-assert len(stages) == 12 and len(tpl) == 24 and len(dt) == 9, "импорт не совпадает с Excel"
+# Чек-лист и документы сид только дополняет, на рабочей базе их может быть больше.
+assert len(stages) == 12 and len(tpl) >= 24 and len(dt) >= 9, (
+    f"импорт: этапов {len(stages)}, пунктов чек-листа {len(tpl)}, типов документов {len(dt)}"
+)
 print(f"     этапов {len(stages)}, пунктов чек-листа {len(tpl)}, типов документов {len(dt)}")
 
 print("\n=== Дашборд ===")
@@ -136,15 +140,21 @@ call("GET", "/api/dashboard/by-supplier", ved)
 call("GET", "/api/dashboard?pipeline=bogus", ved, expect=422)
 
 print("\n=== Жизненный цикл сделки ===")
+SMOKE_TITLE = "Проверка: клапаны дозирующие 24/410"
+# Прогон, упавший на середине, не дошёл до очистки — убираем его сделку.
+for old in call("GET", f"/api/deals?q={urllib.parse.quote(SMOKE_TITLE)}&page_size=500", ved)["items"]:
+    if old["title"] == SMOKE_TITLE:
+        call("DELETE", f"/api/deals/{old['id']}", ved, expect=204)
+        print(f"     удалена оставшаяся проверочная сделка {old['code']}")
 deal = call("POST", "/api/deals", ved,
-            {"title": "Проверка: клапаны дозирующие 24/410", "requester": "Директор производства",
+            {"title": SMOKE_TITLE, "requester": "Директор производства",
              "priority": "high", "pipeline": "import", "stage_id": 1}, expect=201)
 did = deal["id"]
 print(f"     создана {deal['code']}")
 
 chk = call("GET", f"/api/deals/{did}/checklist", ved)
 docs = call("GET", f"/api/deals/{did}/documents", ved)
-assert len(chk) == 24 and len(docs) == 9, "чек-лист/документы не материализовались"
+assert len(chk) == len(tpl) and len(docs) == len(dt), "чек-лист/документы не материализовались"
 
 call("PATCH", f"/api/deals/{did}/checklist/{chk[0]['id']}", ved, {"is_done": True})
 call("PATCH", f"/api/deals/{did}/documents/{docs[0]['id']}", ved,

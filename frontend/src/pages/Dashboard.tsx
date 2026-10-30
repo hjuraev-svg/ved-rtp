@@ -2,10 +2,10 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { api } from '../api'
 import { useLiveData, useToast } from '../store'
 import type { Dashboard as DashboardData, Pipeline, Tile } from '../types'
-import { Empty, ErrorBox, Loading } from '../components/ui'
+import { ErrorBox, Loading } from '../components/ui'
 import { GripIcon, StageIcon } from '../components/icons'
 import FinanceFunnel from './FinanceFunnel'
-import { GROUP_COLORS, days, fmtDateTime } from '../util'
+import { GROUP_COLORS, fmtDateTime } from '../util'
 
 interface Layout {
   tile_order: number[]
@@ -159,7 +159,7 @@ export default function Dashboard({ navigate }: { navigate: (p: string) => void 
   if (error) return <ErrorBox message={error} />
   if (!data) return null
 
-  const { alerts, groups } = data
+  const { groups } = data
 
   return (
     <>
@@ -357,49 +357,6 @@ export default function Dashboard({ navigate }: { navigate: (p: string) => void 
             </button>
           )
         })}
-      </div>
-
-      <div className="section-title">
-        Требуют внимания {alerts.length > 0 && `· ${alerts.length}`}
-      </div>
-      <div className="card">
-        {alerts.length === 0 ? (
-          <Empty text="Просрочек нет — все сделки в пределах нормативов." />
-        ) : (
-          alerts.map((a, i) => (
-            <div
-              className="alert-row"
-              key={`${a.deal_id}-${a.kind}-${i}`}
-              onClick={() => navigate(`deal/${a.deal_id}`)}
-            >
-              <span className="badge red" style={{ marginTop: 1 }}>
-                {a.kind === 'sla'
-                  ? 'Простой'
-                  : a.kind === 'eta_slip'
-                    ? 'ETA сдвиг'
-                    : a.kind === 'eta_overdue'
-                      ? 'ETA прошла'
-                      : a.kind === 'production_slip'
-                        ? 'Производство'
-                        : a.kind === 'customs_slow'
-                          ? 'Таможня'
-                          : a.kind === 'unk_missing'
-                            ? 'УНК'
-                            : 'Внимание'}
-              </span>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div className="row wrap" style={{ gap: 8 }}>
-                  <span className="mono faint">{a.code}</span>
-                  <b style={{ fontWeight: 570 }}>{a.title}</b>
-                </div>
-                <div className="small faint" style={{ marginTop: 2 }}>
-                  {a.stage_name} · {a.detail}
-                </div>
-              </div>
-              <span className="badge nowrap">{days(a.days_in_stage)}</span>
-            </div>
-          ))
-        )}
       </div>
 
       <div className="small faint" style={{ marginTop: 14, textAlign: 'right' }}>
