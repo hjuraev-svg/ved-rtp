@@ -24,6 +24,7 @@ from ..reference import (
     FINANCE_STAGES,
     PAYMENT_DOCS,
     PIPELINE_BY_CODE,
+    PIPELINES,
 )
 from ..schemas import DashboardOut, LayoutIn, LayoutOut
 from ..security import current_user
@@ -105,6 +106,24 @@ async def dashboard(
     if pipeline not in PIPELINE_BY_CODE:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Неизвестный тип сделки")
     return await build_dashboard(db, pipeline)
+
+
+@router.get("/summary")
+async def summary(db: AsyncSession = Depends(get_db), _: User = Depends(current_user)):
+    """Четыре ячейки над воронкой: сколько сделок в работе и в красной зоне по каждому направлению."""
+    out = []
+    for p in PIPELINES:
+        data = await build_dashboard(db, p["code"])
+        out.append(
+            {
+                "code": p["code"],
+                "name": p["name"],
+                "description": p["description"],
+                "active": sum(t["count"] for t in data["tiles"]),
+                "overdue": sum(t["overdue"] for t in data["tiles"]),
+            }
+        )
+    return out
 
 
 @router.get("/cycle-times")
@@ -428,7 +447,7 @@ async def finance_funnel(
             "stage_id": stage_id, "supplier": supplier or "—",
             "currency": cur or "USD", "contract_amount": amount,
             "paid": paid, "rest": rest, "missing_docs": missing,
-            "unk_missing": pl == "import" and stage_id >= 7 and not unk,
+            "unk_missing": pl == "import" and stage_id >= 6 and not unk,
         })
         if rest is not None and rest > 0:
             k = (supplier or "—", cur or "USD")
@@ -560,7 +579,7 @@ async def unk_registry(
          unk, unk_date, supplier, paid) in rows:
         # Порог регистрации УНК привязан к этапу: до подписания контракта
         # требовать его бессмысленно.
-        needs_unk = (pipeline == "import" and stage_id >= 6) or (pipeline == "export" and stage_id >= 302)
+        needs_unk = (pipeline == "import" and stage_id >= 5) or (pipeline == "export" and stage_id >= 302)
         registry.append(
             {
                 "deal_id": did, "code": code, "title": title, "pipeline": pipeline,

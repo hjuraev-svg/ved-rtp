@@ -83,16 +83,16 @@ def is_overdue(deal: Deal, sla_days: int | None, overdue_revenue: bool = False) 
     if deal.pipeline != "import":
         return sla_days is not None and days_since(deal.stage_entered_at) > sla_days
 
-    if deal.stage_id == 15 and deal.gtd_submitted_at and not deal.gtd_released_at:
+    if deal.stage_id == 11 and deal.gtd_submitted_at and not deal.gtd_released_at:
         return working_days(deal.gtd_submitted_at, date.today()) > (sla_days or 3)
 
-    if deal.stage_id == 12:  # in transit: judged by ETA, not time-in-stage
+    if deal.stage_id == 10:  # in transit: judged by ETA, not time-in-stage
         if deal.eta and not deal.actual_arrival and date.today() > deal.eta:
             return True
         slip = eta_slip_days(deal)
         return slip is not None and slip > 0
 
-    if deal.stage_id == 9:  # production: «отклонение от плана более 5 дней»
+    if deal.stage_id == 7:  # production: «отклонение от плана более 5 дней»
         slip = production_slip_days(deal)
         if slip is not None and slip > (sla_days or 5):
             return True
@@ -103,7 +103,7 @@ def is_overdue(deal: Deal, sla_days: int | None, overdue_revenue: bool = False) 
 
 
 async def docs_ready_pct(db: AsyncSession, deal_id: int) -> int:
-    """Block 13: % готовности комплекта = получено / требуется × 100."""
+    """Block 9: % готовности комплекта = получено / требуется × 100."""
     res = await db.execute(
         select(
             func.count(DealDocument.id).filter(DocType.is_required.is_(True)),
@@ -301,7 +301,7 @@ async def build_dashboard(db: AsyncSession, pipeline: str = DEFAULT_PIPELINE) ->
         {"currency": r[0] or "USD", "amount": r[2] or Decimal(0)} for r in signed_rows if r[2]
     ]
 
-    in_transit = len(per_stage.get(12, [])) if pipeline == "import" else 0
+    in_transit = len(per_stage.get(10, [])) if pipeline == "import" else 0
     arriving_week = sum(
         1
         for d in open_deals
@@ -348,16 +348,16 @@ async def build_dashboard(db: AsyncSession, pipeline: str = DEFAULT_PIPELINE) ->
     open_claims = sum(int(r[1]) for r in claim_rows)
     claims_amount = [{"currency": r[0] or "USD", "amount": r[2] or Decimal(0)} for r in claim_rows if r[2]]
 
-    # УНК control: deals that already have a signed contract (stage >= 6)
+    # УНК control: deals that already have a signed contract (stage >= 5)
     needs_unk = (
-        [d for d in open_deals if d.stage_id >= 6 and d.contract_number]
+        [d for d in open_deals if d.stage_id >= 5 and d.contract_number]
         if pipeline == "import"
         else []
     )
     unk_registered = sum(1 for d in needs_unk if d.unk_number)
     unk_missing = len(needs_unk) - unk_registered
     for d in needs_unk:
-        if not d.unk_number and d.stage_id >= 7:
+        if not d.unk_number and d.stage_id >= 6:
             alerts.append(
                 {
                     "deal_id": d.id,
@@ -407,7 +407,7 @@ def _alert_for(deal: Deal, stage: Stage, overdue_revenue: bool = False) -> dict:
     if stage.id == 307 and overdue_revenue:
         kind = "revenue_overdue"
         detail = "Срок поступления валютной выручки прошёл — риск нарушения репатриации"
-    elif stage.id == 12:
+    elif stage.id == 10:
         slip = eta_slip_days(deal)
         if deal.eta and not deal.actual_arrival and date.today() > deal.eta:
             kind = "eta_overdue"
@@ -415,12 +415,12 @@ def _alert_for(deal: Deal, stage: Stage, overdue_revenue: bool = False) -> dict:
         elif slip:
             kind = "eta_slip"
             detail = f"ETA сдвинута на {slip} дн. ({deal.eta_initial:%d.%m} → {deal.eta:%d.%m})"
-    elif stage.id == 9:
+    elif stage.id == 7:
         slip = production_slip_days(deal)
         if slip is not None and slip > 0:
             kind = "production_slip"
             detail = f"Отставание от плана готовности на {slip} дн."
-    elif stage.id == 15 and deal.gtd_submitted_at and not deal.gtd_released_at:
+    elif stage.id == 11 and deal.gtd_submitted_at and not deal.gtd_released_at:
         kind = "customs_slow"
         detail = (
             f"На оформлении {working_days(deal.gtd_submitted_at, date.today())} раб. дн. "

@@ -14,6 +14,8 @@ import logging
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from .reference import IMPORT_STAGE_REMAP, STAGES
+
 log = logging.getLogger("ved.migrate")
 
 STATEMENTS = [
@@ -46,11 +48,77 @@ STATEMENTS = [
 ]
 
 
+async def remap_import_stages(conn: AsyncConnection) -> None:
+    """2026-10: воронка импорта сокращена с 19 этапов до 12.
+
+    Сделки, история переходов и чек-лист переносятся на новые номера по
+    IMPORT_STAGE_REMAP, лишние этапы удаляются. Признак старой схемы — этап 13
+    у импорта; после переноса его нет, так что повторный запуск ничего не делает.
+    Ошибка здесь не глотается: недоперенесённые сделки хуже, чем неподнявшийся
+    сервис, который откатит деплой.
+    """
+    old = (
+        await conn.execute(text("SELECT 1 FROM stages WHERE id = 13 AND pipeline = 'import'"))
+    ).first()
+    if old is None:
+        return
+
+    def case(col: str) -> str:
+        whens = " ".join(f"WHEN {a} THEN {b}" for a, b in IMPORT_STAGE_REMAP.items())
+        return f"CASE {col} {whens} ELSE {col} END"
+
+    # «Завершено / на складе» больше нет: такие сделки уже прошли воронку —
+    # закрываем их, а не оставляем висеть на акте входного контроля.
+    await conn.execute(
+        text(
+            "UPDATE deals SET status = 'done', closed_at = COALESCE(closed_at, stage_entered_at) "
+            "WHERE pipeline = 'import' AND stage_id = 19 AND status IN ('active', 'on_hold')"
+        )
+    )
+    await conn.execute(text(f"UPDATE deals SET stage_id = {case('stage_id')} WHERE stage_id <= 19"))
+    await conn.execute(
+        text(
+            f"UPDATE stage_events SET from_stage_id = {case('from_stage_id')}, "
+            f"to_stage_id = {case('to_stage_id')} WHERE to_stage_id <= 19 OR from_stage_id <= 19"
+        )
+    )
+    await conn.execute(
+        text(f"UPDATE checklist_templates SET stage_id = {case('stage_id')} WHERE stage_id <= 19")
+    )
+    # Сохранённые раскладки плиток ссылаются на старые номера — сбрасываем.
+    await conn.execute(text("DELETE FROM user_dashboard"))
+    await conn.execute(text("DELETE FROM stages WHERE pipeline = 'import' AND id > 12"))
+
+    # Код этапа уникален, а новые коды частично совпадают со старыми у соседей,
+    # поэтому сначала временные, потом окончательные. Нормативы тоже ставим
+    # заново: смысл этапа сменился, и старое значение к нему не относится.
+    await conn.execute(text("UPDATE stages SET code = 'tmp_' || id WHERE pipeline = 'import'"))
+    for row in STAGES:
+        if row["pipeline"] != "import":
+            continue
+        await conn.execute(
+            text(
+                "UPDATE stages SET code = :code, name = :name, sla_days = :sla, "
+                "frequency = :frequency, responsible = :responsible WHERE id = :id"
+            ),
+            {
+                "id": row["id"],
+                "code": row["code"],
+                "name": row["name"],
+                "sla": row["sla_days"],
+                "frequency": row["frequency"],
+                "responsible": row["responsible"],
+            },
+        )
+    log.info("import pipeline remapped from 19 to 12 stages")
+
+
 async def run(conn: AsyncConnection) -> None:
     # Local development uses SQLite and always creates its schema from current
     # models. These forward-only ALTER statements are only for PostgreSQL.
     if conn.dialect.name != "postgresql":
         log.info("schema migration skipped for %s", conn.dialect.name)
+        await remap_import_stages(conn)
         return
     for stmt in STATEMENTS:
         try:
@@ -58,3 +126,4 @@ async def run(conn: AsyncConnection) -> None:
         except Exception as exc:  # pragma: no cover - surfaced in logs
             log.warning("migration statement failed (%s): %s", stmt.split(" ADD")[0], exc)
     log.info("schema migration applied (%d statements)", len(STATEMENTS))
+    await remap_import_stages(conn)

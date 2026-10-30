@@ -22,7 +22,14 @@ from .models import (
     Supplier,
     User,
 )
-from .reference import CHECKLIST, CHECKLIST_PIPELINE, DOC_TYPES, GROUP_BY_KEY, STAGES
+from .reference import (
+    CHECKLIST,
+    CHECKLIST_PIPELINE,
+    DOC_TYPES,
+    GROUP_BY_KEY,
+    IMPORT_STAGE_REMAP,
+    STAGES,
+)
 from .security import hash_password
 
 log = logging.getLogger("ved.seed")
@@ -192,7 +199,10 @@ async def seed_demo(db: AsyncSession) -> None:
     ).scalars().all()
     ved_user = next(u for u in users if u.role == "ved")
 
-    for idx, (stage_id, title, age, sup_idx, amount, currency, transport) in enumerate(DEMO_DEALS, start=1):
+    for idx, (old_stage, title, age, sup_idx, amount, currency, transport) in enumerate(DEMO_DEALS, start=1):
+        # Демо-сделки описаны по старой 19-этапной схеме; поля заполняются по
+        # ней, а сама сделка встаёт на соответствующий новый этап.
+        stage_id = IMPORT_STAGE_REMAP[old_stage]
         entered = now - timedelta(days=age, hours=rnd.randint(0, 20))
         # Give every already-passed stage a plausible duration, then derive the
         # creation date by walking backwards. Building the history this way keeps
@@ -221,54 +231,54 @@ async def seed_demo(db: AsyncSession) -> None:
             updated_at=entered,
         )
 
-        if stage_id >= 5 and amount:
+        if old_stage >= 5 and amount:
             deal.contract_amount = amount
             deal.contract_number = f"CT-{today.year}-{100 + idx}"
-        if stage_id >= 6 and amount:
+        if old_stage >= 6 and amount:
             # Spread signings across the last ~7 weeks, but keep roughly a third
             # inside the current month so the monthly KPI is not empty on day 1.
             back = rnd.randint(0, today.day - 1) if idx % 3 == 0 else rnd.randint(4, 50)
             deal.contract_date = today - timedelta(days=back)
-        if stage_id >= 7:
+        if old_stage >= 7:
             # one deal deliberately left without УНК to exercise the alert
             if idx != 11:
                 deal.unk_number = f"{rnd.randint(10000000, 99999999)}/0001/0/1"
                 deal.unk_date = (deal.contract_date or today) + timedelta(days=rnd.randint(2, 12))
-        if stage_id >= 8:
+        if old_stage >= 8:
             deal.payment_confirmed_at = today - timedelta(days=rnd.randint(5, 40))
             deal.payment_amount = amount
             deal.order_confirmation_at = today - timedelta(days=rnd.randint(3, 35))
-        if stage_id >= 9:
+        if old_stage >= 9:
             deal.production_ready_plan = today - timedelta(days=rnd.randint(-20, 15))
-            if stage_id >= 11:
+            if old_stage >= 11:
                 deal.production_ready_fact = deal.production_ready_plan + timedelta(days=rnd.randint(0, 6))
-        if stage_id >= 10:
-            deal.packing_status = "confirmed" if stage_id > 10 else "requirements_sent"
-        if stage_id >= 11:
+        if old_stage >= 10:
+            deal.packing_status = "confirmed" if old_stage > 10 else "requirements_sent"
+        if old_stage >= 11:
             deal.freight_cost_plan = rnd.randint(1800, 9000)
-            if stage_id >= 13:
+            if old_stage >= 13:
                 deal.freight_cost_fact = float(deal.freight_cost_plan) * rnd.uniform(0.95, 1.18)
-        if stage_id >= 12:
+        if old_stage >= 12:
             deal.etd = today - timedelta(days=rnd.randint(5, 35))
             deal.eta_initial = deal.etd + timedelta(days=rnd.randint(14, 40))
             slip = rnd.choice([0, 0, 0, 3, 7])
             deal.eta = deal.eta_initial + timedelta(days=slip)
-        if stage_id >= 14:
+        if old_stage >= 14:
             deal.broker_docs_sent_at = today - timedelta(days=rnd.randint(2, 12))
-        if stage_id >= 15:
+        if old_stage >= 15:
             deal.gtd_submitted_at = today - timedelta(days=rnd.randint(1, 9))
-            if stage_id >= 16:
+            if old_stage >= 16:
                 deal.gtd_released_at = deal.gtd_submitted_at + timedelta(days=rnd.randint(1, 5))
                 deal.gtd_number = f"26{rnd.randint(100000, 999999)}/{rnd.randint(100000,999999)}/000{rnd.randint(1,9)}"
-        if stage_id >= 16:
+        if old_stage >= 16:
             deal.warehouse_notified_at = today - timedelta(days=rnd.randint(1, 6))
-        if stage_id >= 17:
+        if old_stage >= 17:
             deal.actual_arrival = today - timedelta(days=rnd.randint(0, 4))
             deal.places_plan = rnd.randint(20, 400)
             deal.places_fact = deal.places_plan - rnd.choice([0, 0, 0, 1, 2])
             deal.packaging_ok = rnd.choice([True, True, True, False])
             deal.marking_ok = rnd.choice([True, True, True, False])
-        if stage_id >= 18:
+        if old_stage >= 18:
             deal.act_number = f"АВК-{today.year}-{idx:03d}"
             deal.act_date = today - timedelta(days=rnd.randint(0, 3))
 
@@ -291,19 +301,19 @@ async def seed_demo(db: AsyncSession) -> None:
         # documents follow the same progression
         for dt in doc_types:
             received = False
-            if dt.code in ("contract",) and stage_id >= 6:
+            if dt.code in ("contract",) and old_stage >= 6:
                 received = True
-            elif dt.code == "order_confirmation" and stage_id >= 8:
+            elif dt.code == "order_confirmation" and old_stage >= 8:
                 received = True
-            elif dt.code in ("invoice", "packing_list", "cmr_bl") and stage_id >= 13:
+            elif dt.code in ("invoice", "packing_list", "cmr_bl") and old_stage >= 13:
                 received = rnd.random() < 0.9
-            elif dt.code == "cert_origin" and stage_id >= 13:
+            elif dt.code == "cert_origin" and old_stage >= 13:
                 received = rnd.random() < 0.7
-            elif dt.code == "cert_quality" and stage_id >= 13:
+            elif dt.code == "cert_quality" and old_stage >= 13:
                 received = rnd.random() < 0.5
-            elif dt.code == "gtd" and stage_id >= 16:
+            elif dt.code == "gtd" and old_stage >= 16:
                 received = True
-            elif dt.code == "act_qc" and stage_id >= 18:
+            elif dt.code == "act_qc" and old_stage >= 18:
                 received = True
             db.add(
                 DealDocument(
@@ -316,7 +326,7 @@ async def seed_demo(db: AsyncSession) -> None:
             )
 
         # quotes for deals that reached the comparison stage
-        if stage_id >= 3:
+        if old_stage >= 3:
             pool = rnd.sample(suppliers, k=rnd.randint(2, 4))
             base = rnd.randint(20000, 120000)
             for qi, sup in enumerate(pool):
@@ -360,7 +370,7 @@ async def seed_demo(db: AsyncSession) -> None:
             )
             prev_entered = step
 
-        if stage_id == 18 and rnd.random() < 0.8:
+        if old_stage == 18 and rnd.random() < 0.8:
             db.add(
                 Claim(
                     deal_id=deal.id,

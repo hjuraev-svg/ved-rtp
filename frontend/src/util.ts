@@ -16,9 +16,10 @@ export const GROUP_COLORS: Record<string, string> = {
 }
 
 export const PIPELINE_LABELS: Record<string, string> = {
-  import: 'Импорт (ВЭД)',
-  local: 'Местный поставщик',
-  service: 'Услуга',
+  import: 'Иностранные поставщики',
+  local: 'Местные поставщики',
+  service: 'Транспортные услуги',
+  export: 'Экспорт',
 }
 
 export const STATUS_LABELS: Record<string, string> = {

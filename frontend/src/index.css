@@ -473,6 +473,47 @@ a {
   font-variant-numeric: tabular-nums;
 }
 
+/* ---- four directions above the funnel ---- */
+.dir-cells {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
+}
+@media (max-width: 720px) {
+  .dir-cells {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+.dir-cell {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 2px;
+  padding: 16px 12px 14px;
+  min-height: 112px;
+  border: 2px solid transparent;
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--accent) var(--tile-mix), var(--tile-base));
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+  transition: background 0.14s, border-color 0.14s, box-shadow 0.14s;
+}
+.dir-cell:hover {
+  background: color-mix(in srgb, var(--accent) var(--tile-mix-hover), var(--tile-base));
+}
+.dir-cell.active {
+  border-color: var(--accent);
+  box-shadow: var(--shadow);
+}
+.dir-cell .tile-name {
+  font-size: 14px;
+}
+
 /* ---- edit / drag mode ---- */
 .tiles.editing .tile {
   cursor: grab;

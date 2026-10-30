@@ -82,8 +82,22 @@ export default function DealDetail({
     }
   }
 
+  // Последний этап воронки (у импорта — акт входного контроля): дальше этапов
+  // нет, сделка закрывается и уходит с дашборда.
+  async function close() {
+    if (!confirm('Закрыть сделку? Она уйдёт из воронки в архив.')) return
+    try {
+      await api.patch(`/api/deals/${dealId}`, { status: 'done' })
+      notify('Сделка закрыта')
+      reload()
+    } catch (e: any) {
+      notify(e?.message ?? 'Не удалось закрыть', 'err')
+    }
+  }
+
   const idx = stages.findIndex((s) => s.id === deal.stage_id)
   const nextStage = idx >= 0 && idx < stages.length - 1 ? stages[idx + 1].id : null
+  const isOpen = deal.status === 'active' || deal.status === 'on_hold'
 
   return (
     <>
@@ -105,6 +119,11 @@ export default function DealDetail({
         {canEdit && nextStage && (
           <button className="btn primary" onClick={() => setMoving(nextStage)}>
             Следующий этап →
+          </button>
+        )}
+        {canEdit && !nextStage && idx >= 0 && isOpen && (
+          <button className="btn primary" onClick={close}>
+            ✓ Закрыть сделку
           </button>
         )}
       </div>

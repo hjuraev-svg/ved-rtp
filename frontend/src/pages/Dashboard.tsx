@@ -13,6 +13,21 @@ interface Layout {
   is_custom: boolean
 }
 
+interface PipelineSummary {
+  code: string
+  name: string
+  description: string
+  active: number
+  overdue: number
+}
+
+const DIR_COLORS: Record<string, string> = {
+  import: '#3b82f6',
+  local: '#8b5cf6',
+  service: '#f59e0b',
+  export: '#22c55e',
+}
+
 const PIPE_KEY = 'ved_pipeline'
 
 export default function Dashboard({ navigate }: { navigate: (p: string) => void }) {
@@ -30,9 +45,16 @@ export default function Dashboard({ navigate }: { navigate: (p: string) => void 
   }, [pipeline])
 
   const { data, error, loading } = useLiveData<DashboardData>(
-    () => api.get<DashboardData>(`/api/dashboard?pipeline=${pipeline}`),
+    // При «Все направления» процессная воронка скрыта, но запрос всё равно
+    // идёт — с пустым типом бэкенд ответил бы ошибкой на всю страницу.
+    () => api.get<DashboardData>(`/api/dashboard?pipeline=${pipeline || 'import'}`),
     [pipeline],
   )
+  const { data: summary } = useLiveData<PipelineSummary[]>(
+    () => api.get<PipelineSummary[]>('/api/dashboard/summary'),
+    [],
+  )
+  const current = pipelines.find((p) => p.code === pipeline)
 
   const [order, setOrder] = useState<number[]>([])
   const [hidden, setHidden] = useState<number[]>([])
@@ -141,9 +163,36 @@ export default function Dashboard({ navigate }: { navigate: (p: string) => void 
 
   return (
     <>
+      {/* Четыре направления — сверху. Ячейка выбирает, чья воронка ниже. */}
+      <div className="dir-cells">
+        {(summary ?? pipelines.map((p) => ({ ...p, active: 0, overdue: 0 }))).map((p, i) => (
+          <button
+            key={p.code}
+            className={`dir-cell ${pipeline === p.code ? 'active' : ''}`}
+            style={{ '--accent': DIR_COLORS[p.code] ?? '#3b82f6' } as React.CSSProperties}
+            title={p.description}
+            onClick={() => setPipeline(p.code)}
+          >
+            <span className="tile-no">{i + 1}</span>
+            {p.overdue > 0 && <span className="tile-flag">{p.overdue}</span>}
+            <span className={`tile-count ${p.overdue > 0 ? 'danger' : p.active === 0 ? 'zero' : ''}`}>
+              {p.active}
+            </span>
+            <span className="tile-name">{p.name}</span>
+            <span className="tile-sub">
+              {p.active === 0
+                ? 'нет сделок'
+                : p.overdue > 0
+                  ? `${p.overdue} в красной зоне`
+                  : 'сделок в работе'}
+            </span>
+          </button>
+        ))}
+      </div>
+
       {/* Две воронки по одним и тем же сделкам: процессная отвечает «где груз»,
           финансовая — «кому сколько должны и что мешает заплатить». */}
-      <div className="card" style={{ marginBottom: 12 }}>
+      <div className="card" style={{ marginBottom: 16 }}>
         <div className="tabs">
           <button
             className={`tab ${funnel === 'process' ? 'active' : ''}`}
@@ -154,7 +203,7 @@ export default function Dashboard({ navigate }: { navigate: (p: string) => void 
               setFunnel('process')
             }}
           >
-            ▦ Воронка процессов
+            ▦ Воронка процессов{current ? ` · ${current.name}` : ''}
           </button>
           <button
             className={`tab ${funnel === 'finance' ? 'active' : ''}`}
@@ -162,38 +211,19 @@ export default function Dashboard({ navigate }: { navigate: (p: string) => void 
           >
             ₴ Финансовая воронка
           </button>
+          {/* «Все типы» есть только у финансовой воронки: там этапы одни и те
+              же для любого маршрута, и долги складываются осмысленно. */}
+          {funnel === 'finance' && (
+            <button
+              className={`tab ${pipeline === '' ? 'active' : ''}`}
+              title="Все четыре направления вместе"
+              onClick={() => setPipeline('')}
+            >
+              Все направления
+            </button>
+          )}
         </div>
       </div>
-
-      {pipelines.length > 1 && (
-        <div className="card" style={{ marginBottom: 16 }}>
-          <div className="tabs">
-            {/* «Все типы» есть только у финансовой воронки: там этапы одни и те
-                же для любого маршрута, и долги складываются осмысленно. У
-                процессной воронки у каждого типа свой набор этапов — сводить
-                их в одну таблицу было бы нечего. */}
-            {funnel === 'finance' && (
-              <button
-                className={`tab ${pipeline === '' ? 'active' : ''}`}
-                title="Импорт, местные закупки, услуги и экспорт вместе"
-                onClick={() => setPipeline('')}
-              >
-                Все типы
-              </button>
-            )}
-            {pipelines.map((p) => (
-              <button
-                key={p.code}
-                className={`tab ${pipeline === p.code ? 'active' : ''}`}
-                title={p.description}
-                onClick={() => setPipeline(p.code)}
-              >
-                {p.name}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
 
       {funnel === 'finance' && <FinanceFunnel pipeline={pipeline} navigate={navigate} />}
 
